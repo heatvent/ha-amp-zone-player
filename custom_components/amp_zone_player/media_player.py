@@ -37,6 +37,7 @@ from homeassistant.const import (
     STATE_UNKNOWN,
 )
 from homeassistant.core import Event, HomeAssistant, State, callback
+from homeassistant.exceptions import HomeAssistantError
 from homeassistant.helpers import entity_registry as er
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.helpers.event import async_track_state_change_event
@@ -47,7 +48,7 @@ from .session import AmpSession
 
 _LOGGER = logging.getLogger(__name__)
 
-DEVICE_NAME = "Amp zones"
+DEVICE_NAME_FALLBACK = "Amp zones"
 
 _STATE_MAP = {
     STATE_OFF: MediaPlayerState.OFF,
@@ -58,6 +59,9 @@ _STATE_MAP = {
     STATE_STANDBY: MediaPlayerState.STANDBY,
 }
 
+# Only advertise transport bits we actually implement as passthrough.
+_PASSTHROUGH_FEATURES = MediaPlayerEntityFeature.SEEK
+
 
 def _merged_config(entry: ConfigEntry) -> dict[str, Any]:
     return {**entry.data, **entry.options}
@@ -67,6 +71,12 @@ def _is_on_state(state: State | None) -> bool:
     if state is None or state.state in (STATE_OFF, STATE_UNAVAILABLE, STATE_UNKNOWN):
         return False
     return True
+
+
+def _short_media_id(media_id: str, limit: int = 80) -> str:
+    if len(media_id) <= limit:
+        return media_id
+    return media_id[:limit] + "…"
 
 
 async def async_setup_entry(
@@ -84,6 +94,10 @@ async def async_setup_entry(
             "No zones configured for %s — reconfigure and select amp zone media players",
             entry.title,
         )
+        return
+
+    if not decoder:
+        _LOGGER.error("No decoder configured for %s", entry.title)
         return
 
     session = AmpSession(hass, entry.entry_id)
@@ -146,7 +160,7 @@ class AmpZoneFacade(MediaPlayerEntity):
         self._attr_name = short
         self._attr_device_info = {
             "identifiers": {(DOMAIN, entry.entry_id)},
-            "name": DEVICE_NAME,
+            "name": (entry.title or "").strip() or DEVICE_NAME_FALLBACK,
             "manufacturer": "Music Assistant Amp Zone Player",
             "model": "Decoder + zone bridge",
         }
@@ -164,7 +178,7 @@ class AmpZoneFacade(MediaPlayerEntity):
         )
 
         @callback
-        def _on_change(event: Event) -> None:
+        def _on_change(_event: Event) -> None:
             self.async_write_ha_state()
 
         self.async_on_remove(
@@ -206,26 +220,60 @@ class AmpZoneFacade(MediaPlayerEntity):
         return self.hass.states.get(self._decoder_id)
 
     async def _async_call(
-        self, service: str, entity_id: str, data: dict[str, Any] | None = None
-    ) -> None:
+        self,
+        service: str,
+        entity_id: str,
+        data: dict[str, Any] | None = None,
+        *,
+        critical: bool = True,
+    ) -> bool:
+        """Call a media_player service. Returns False on soft failure."""
         payload = {ATTR_ENTITY_ID: entity_id, **(data or {})}
-        await self.hass.services.async_call(
-            MP_DOMAIN, service, payload, blocking=True
-        )
+        try:
+            await self.hass.services.async_call(
+                MP_DOMAIN, service, payload, blocking=True
+            )
+            return True
+        except HomeAssistantError as err:
+            _LOGGER.warning(
+                "%s.%s on %s failed: %s",
+                MP_DOMAIN,
+                service,
+                entity_id,
+                err,
+            )
+            if critical:
+                raise
+            return False
+        except Exception:
+            _LOGGER.exception(
+                "%s.%s on %s raised unexpectedly", MP_DOMAIN, service, entity_id
+            )
+            if critical:
+                raise
+            return False
 
     async def async_power_zone_on(self) -> None:
         """Turn the underlying amp zone on (and select decoder source)."""
-        await self._async_call(SERVICE_TURN_ON, self._zone_id)
+        await self._async_call(SERVICE_TURN_ON, self._zone_id, critical=True)
         if self._source_name:
-            await self._async_call(
+            # Wrong/missing source name must not abort join/play.
+            ok = await self._async_call(
                 "select_source",
                 self._zone_id,
                 {"source": self._source_name},
+                critical=False,
             )
+            if not ok:
+                _LOGGER.warning(
+                    "Could not select source %r on %s — check amp source_list spelling",
+                    self._source_name,
+                    self._zone_id,
+                )
 
     async def async_power_zone_off(self) -> None:
         """Turn the underlying amp zone off."""
-        await self._async_call(SERVICE_TURN_OFF, self._zone_id)
+        await self._async_call(SERVICE_TURN_OFF, self._zone_id, critical=False)
 
     @property
     def available(self) -> bool:
@@ -249,7 +297,6 @@ class AmpZoneFacade(MediaPlayerEntity):
         zone = self._zone()
         if not _is_on_state(zone):
             return MediaPlayerState.OFF
-        # In session or powered: mirror decoder transport.
         decoder = self._decoder()
         if decoder is None:
             return MediaPlayerState.ON
@@ -274,14 +321,7 @@ class AmpZoneFacade(MediaPlayerEntity):
         if decoder is not None:
             raw = decoder.attributes.get("supported_features")
             if isinstance(raw, int):
-                transport = (
-                    MediaPlayerEntityFeature.SEEK
-                    | MediaPlayerEntityFeature.CLEAR_PLAYLIST
-                    | MediaPlayerEntityFeature.SHUFFLE_SET
-                    | MediaPlayerEntityFeature.REPEAT_SET
-                    | MediaPlayerEntityFeature.BROWSE_MEDIA
-                )
-                features |= MediaPlayerEntityFeature(raw) & transport
+                features |= MediaPlayerEntityFeature(raw) & _PASSTHROUGH_FEATURES
         return features
 
     @property
@@ -312,7 +352,7 @@ class AmpZoneFacade(MediaPlayerEntity):
         """Add rooms to this session (this player is the leader)."""
         if not self.entity_id:
             return
-        await self._session.async_join(self.entity_id, list(group_members))
+        await self._session.async_join(self.entity_id, list(group_members or []))
 
     async def async_unjoin_player(self) -> None:
         """Leave the session — zone off (Composer: remove room)."""
@@ -336,17 +376,7 @@ class AmpZoneFacade(MediaPlayerEntity):
         """Leave session / power zone off."""
         await self.async_unjoin_player()
 
-    async def _async_ensure_in_session(self) -> None:
-        if not self.entity_id:
-            return
-        if not self._session.is_member(self.entity_id):
-            await self._session.async_ensure_leader(self.entity_id)
-        elif not self._session.is_leader(self.entity_id):
-            # Already a member — keep leader; just ensure zone on.
-            await self.async_power_zone_on()
-
     async def async_media_play(self) -> None:
-        await self._async_ensure_in_session()
         if self.entity_id:
             await self._session.async_ensure_leader(self.entity_id)
         await self._async_call(SERVICE_MEDIA_PLAY, self._decoder_id)
@@ -359,7 +389,14 @@ class AmpZoneFacade(MediaPlayerEntity):
 
         Leaving a room is turn_off / unjoin — not media_stop.
         """
-        await self._async_call(SERVICE_MEDIA_STOP, self._decoder_id)
+        stopped = await self._async_call(
+            SERVICE_MEDIA_STOP, self._decoder_id, critical=False
+        )
+        if not stopped:
+            # Some streamers (incl. older LinkPlay) reject stop — pause is enough.
+            await self._async_call(
+                SERVICE_MEDIA_PAUSE, self._decoder_id, critical=False
+            )
 
     async def async_media_next_track(self) -> None:
         await self._async_call(SERVICE_MEDIA_NEXT_TRACK, self._decoder_id)
@@ -376,14 +413,19 @@ class AmpZoneFacade(MediaPlayerEntity):
         self, media_type: MediaType | str, media_id: str, **kwargs: Any
     ) -> None:
         """Start/queue on decoder; this facade becomes session leader."""
+        if not media_id:
+            raise HomeAssistantError("play_media requires a media_content_id")
+
         if self.entity_id:
             await self._session.async_ensure_leader(self.entity_id)
 
         # Wake the streamer — some WiiM/LinkPlay entities ignore play_media while off.
-        await self._async_call(SERVICE_TURN_ON, self._decoder_id)
+        await self._async_call(
+            SERVICE_TURN_ON, self._decoder_id, critical=False
+        )
 
         # Music Assistant HA players always send an HTTP URL with type "music".
-        # Do not forward Cast-style `extra` metadata — many streamers reject it.
+        # Do not forward Cast-style `extra` / enqueue — many streamers reject them.
         content_type: MediaType | str = media_type or MediaType.MUSIC
         if isinstance(media_id, str) and media_id.startswith(("http://", "https://")):
             content_type = MediaType.MUSIC
@@ -393,60 +435,52 @@ class AmpZoneFacade(MediaPlayerEntity):
             "media_content_id": media_id,
         }
         _LOGGER.info(
-            "play_media → decoder %s type=%s id=%s…",
+            "play_media → decoder %s type=%s id=%s",
             self._decoder_id,
             content_type,
-            (media_id[:80] + "…") if len(media_id) > 80 else media_id,
+            _short_media_id(str(media_id)),
         )
         try:
-            await self._async_call("play_media", self._decoder_id, data)
+            await self._async_call("play_media", self._decoder_id, data, critical=True)
         except Exception:
             _LOGGER.exception(
-                "play_media failed on decoder %s — check WiiM supports URL playback",
+                "play_media failed on decoder %s — confirm the entity can play URLs "
+                "(HA Media Players → HTTP Profile on the facade may also help)",
                 self._decoder_id,
             )
             raise
 
-    @property
-    def media_content_type(self) -> MediaType | str | None:
+    def _decoder_attr(self, key: str) -> Any:
         decoder = self._decoder()
         if decoder is None:
             return None
-        return decoder.attributes.get("media_content_type")
+        return decoder.attributes.get(key)
+
+    def _session_media_attr(self, key: str) -> Any:
+        """Media metadata only when this zone is on (hearing the feed)."""
+        if not _is_on_state(self._zone()):
+            return None
+        return self._decoder_attr(key)
+
+    @property
+    def media_content_type(self) -> MediaType | str | None:
+        return self._decoder_attr("media_content_type")
 
     @property
     def media_content_id(self) -> str | None:
-        decoder = self._decoder()
-        if decoder is None:
-            return None
-        return decoder.attributes.get("media_content_id")
+        return self._decoder_attr("media_content_id")
 
     @property
     def media_title(self) -> str | None:
-        if not _is_on_state(self._zone()):
-            return None
-        decoder = self._decoder()
-        if decoder is None:
-            return None
-        return decoder.attributes.get("media_title")
+        return self._session_media_attr("media_title")
 
     @property
     def media_artist(self) -> str | None:
-        if not _is_on_state(self._zone()):
-            return None
-        decoder = self._decoder()
-        if decoder is None:
-            return None
-        return decoder.attributes.get("media_artist")
+        return self._session_media_attr("media_artist")
 
     @property
     def media_album_name(self) -> str | None:
-        if not _is_on_state(self._zone()):
-            return None
-        decoder = self._decoder()
-        if decoder is None:
-            return None
-        return decoder.attributes.get("media_album_name")
+        return self._session_media_attr("media_album_name")
 
     @property
     def media_image_url(self) -> str | None:
@@ -461,24 +495,15 @@ class AmpZoneFacade(MediaPlayerEntity):
 
     @property
     def media_duration(self) -> int | None:
-        decoder = self._decoder()
-        if decoder is None:
-            return None
-        return decoder.attributes.get("media_duration")
+        return self._decoder_attr("media_duration")
 
     @property
     def media_position(self) -> int | None:
-        decoder = self._decoder()
-        if decoder is None:
-            return None
-        return decoder.attributes.get("media_position")
+        return self._decoder_attr("media_position")
 
     @property
     def media_position_updated_at(self):
-        decoder = self._decoder()
-        if decoder is None:
-            return None
-        return decoder.attributes.get("media_position_updated_at")
+        return self._decoder_attr("media_position_updated_at")
 
     @property
     def extra_state_attributes(self) -> dict[str, Any]:

@@ -27,23 +27,26 @@ class AmpSession:
         self.entry_id = entry_id
         self.leader_id: str | None = None
         self._members: list[str] = []  # facade entity_ids, leader first
-        self._facades: dict[str, AmpZoneFacade] = {}  # facade entity_id -> entity
-        self._zone_to_facade: dict[str, str] = {}  # zone media_player -> facade
+        self._facades: dict[str, AmpZoneFacade] = {}
         self._listeners: list[Callable[[], None]] = []
 
     def register(self, facade: AmpZoneFacade) -> None:
         """Register a facade once its entity_id is known."""
-        assert facade.entity_id
+        if not facade.entity_id:
+            _LOGGER.error("Cannot register facade without entity_id")
+            return
         self._facades[facade.entity_id] = facade
-        self._zone_to_facade[facade.zone_entity_id] = facade.entity_id
 
     def unregister(self, facade: AmpZoneFacade) -> None:
-        self._facades.pop(facade.entity_id, None)
-        self._zone_to_facade.pop(facade.zone_entity_id, None)
-        if facade.entity_id in self._members:
-            self._members = [m for m in self._members if m != facade.entity_id]
-            if self.leader_id == facade.entity_id:
+        entity_id = facade.entity_id
+        if not entity_id:
+            return
+        self._facades.pop(entity_id, None)
+        if entity_id in self._members:
+            self._members = [m for m in self._members if m != entity_id]
+            if self.leader_id == entity_id:
                 self.leader_id = self._members[0] if self._members else None
+        self.async_notify()
 
     def async_add_listener(self, listener: Callable[[], None]) -> Callable[[], None]:
         self._listeners.append(listener)
@@ -57,14 +60,17 @@ class AmpSession:
     @callback
     def async_notify(self) -> None:
         for listener in list(self._listeners):
-            listener()
+            try:
+                listener()
+            except Exception:  # noqa: BLE001 — never let one facade break others
+                _LOGGER.exception("Session listener failed")
 
     @property
     def members(self) -> list[str]:
         return list(self._members)
 
     def group_members_for(self, facade_entity_id: str) -> list[str]:
-        """HA group_members: leader first. Solo player lists only itself."""
+        """HA group_members: leader first. Solo / non-member lists only itself."""
         if facade_entity_id not in self._members:
             return [facade_entity_id]
         if self.leader_id and self.leader_id in self._members:
@@ -88,6 +94,9 @@ class AmpSession:
         """Make this facade the session leader and a member (zone on)."""
         facade = self._facades.get(facade_entity_id)
         if facade is None:
+            _LOGGER.warning(
+                "ensure_leader ignored — unknown facade %s", facade_entity_id
+            )
             return
         await facade.async_power_zone_on()
         if facade_entity_id not in self._members:
@@ -144,7 +153,7 @@ class AmpSession:
                 if existing != leader_entity_id and existing in self._facades:
                     members.append(existing)
 
-        for entity_id in group_members:
+        for entity_id in group_members or []:
             if entity_id == leader_entity_id:
                 continue
             if entity_id not in self._facades:
@@ -156,7 +165,14 @@ class AmpSession:
             if entity_id in members:
                 continue
             member = self._facades[entity_id]
-            await member.async_power_zone_on()
+            try:
+                await member.async_power_zone_on()
+            except Exception:
+                _LOGGER.exception(
+                    "Join: failed to power on %s — leaving it out of the group",
+                    entity_id,
+                )
+                continue
             members.append(entity_id)
 
         self.leader_id = leader_entity_id
@@ -170,7 +186,12 @@ class AmpSession:
         """Remove a facade from the session and power its zone off."""
         facade = self._facades.get(facade_entity_id)
         if facade is not None:
-            await facade.async_power_zone_off()
+            try:
+                await facade.async_power_zone_off()
+            except Exception:
+                _LOGGER.exception(
+                    "Unjoin: failed to power off zone for %s", facade_entity_id
+                )
 
         if facade_entity_id not in self._members:
             self.async_notify()
@@ -182,6 +203,3 @@ class AmpSession:
             _LOGGER.info("Session leader moved to %s", self.leader_id)
 
         self.async_notify()
-
-    def any_other_member_on(self, facade_entity_id: str) -> bool:
-        return any(m != facade_entity_id for m in self._members)

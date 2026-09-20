@@ -119,9 +119,15 @@ class AmpZonePlayerConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             user_input[CONF_ZONES] = _normalize_zones(user_input[CONF_ZONES])
             errors = await _async_validate(self.hass, user_input)
             if not errors:
+                zones = user_input[CONF_ZONES]
+                decoder = user_input[CONF_DECODER]
+                await self.async_set_unique_id(
+                    f"{decoder}|{'|'.join(sorted(zones))}"
+                )
+                self._abort_if_unique_id_configured()
                 self._partial = {
-                    CONF_DECODER: user_input[CONF_DECODER],
-                    CONF_ZONES: user_input[CONF_ZONES],
+                    CONF_DECODER: decoder,
+                    CONF_ZONES: zones,
                     CONF_NAME_PREFIX: (
                         user_input.get(CONF_NAME_PREFIX) or DEFAULT_NAME_PREFIX
                     ).strip(),

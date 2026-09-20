@@ -15,7 +15,7 @@ This integration does **not** speak amplifier UDP. It bridges existing Home Assi
 | Role | What you already have | Used for |
 |---|---|---|
 | **Zone** | Amp zone `media_player` (e.g. [Control4 Audio](https://github.com/heatvent/ha-c4-audio)) | On / off, volume, mute, optional source |
-| **Decoder** | Streamer `media_player` (e.g. WiiM Pro) | Play / pause, queue, artwork, `play_media` |
+| **Decoder** | Streamer `media_player` (e.g. WiiM Pro) | Play / pause, stop, artwork, `play_media` |
 
 ---
 
@@ -56,8 +56,8 @@ Music Assistant
                ┌──────┴──────┐
                ▼             ▼
           Amp zones      Decoder (WiiM)
-          on / off       play / pause
-          volume         next / art
+          on / off       play_media / pause
+          volume         stop / next / art
 ```
 
 One decoder, one queue — many rooms on the same analog stream.
@@ -70,7 +70,7 @@ One decoder, one queue — many rooms on the same analog stream.
 - HA `media_player.join` / `unjoin` and `group_members` (GROUPING)
 - Shared decoder for playback and metadata
 - Optional `select_source` when a zone turns on
-- Per-zone volume; last member leaving does not require stopping the decoder early for others
+- Per-zone volume; leaving a room does not stop the decoder for others
 - Any zone entities with power + volume — not Control4-only
 - UI config (no YAML)
 
@@ -82,7 +82,7 @@ One decoder, one queue — many rooms on the same analog stream.
 |---|---|
 | Home Assistant | 2024.12 or newer |
 | Music Assistant | With **Home Assistant Media Players** provider (typical use) |
-| Decoder | WiiM Pro or any `media_player` that can `play_media` |
+| Decoder | WiiM Pro or any `media_player` that can `play_media` with a URL |
 | Amp zones | Zone `media_player`s with on/off + volume (e.g. `c4_audio`) |
 
 Amp UDP / chassis control stays in [ha-c4-audio](https://github.com/heatvent/ha-c4-audio) (or similar).
@@ -121,7 +121,8 @@ Facade names look like `Bar Speakers`; entity ids like `media_player.bar_speaker
 1. Player providers → **Home Assistant Media Players** → enable the facades only  
 2. Hide/uncheck the raw WiiM and the raw Control4 zone entities  
 3. Select a room → play → use **group / members** to add other facades  
-4. Never use **Add group player** / SyncGroup for these
+4. Never use **Add group player** / SyncGroup for these  
+5. If audio cuts out mid-stream, try changing the facade’s **HTTP Profile** in MA player settings
 
 HA join example:
 
@@ -141,9 +142,10 @@ data:
 
 | Action | Result |
 |---|---|
-| **Play / play_media** | Facade becomes leader; zone on; queue/stream on decoder |
-| **Join** | Member zones on; listed in `group_members` |
-| **Unjoin / Off / Stop** | That zone off; leaves session |
+| **Play / play_media** | Facade becomes leader; zone on; URL/stream on decoder (WiiM woke first) |
+| **Join** | Member zones on; listed in `group_members` (adds merge — does not replace) |
+| **Unjoin / Off** | That zone off; leaves session; decoder keeps playing if others remain |
+| **Stop** | Stops (or pauses) the **decoder** — silence in all joined rooms |
 | **Volume / Mute** | That zone only |
 | **Pause / Next / Seek** | Decoder (shared) |
 
@@ -154,6 +156,18 @@ data:
 - **One queue** — all joined rooms share the decoder stream  
 - **Not digital sync** — rooms share an analog feed; SyncGroup is the wrong tool  
 - **Amp integration required** — this only proxies HA entities  
+- **Amp source name must match** — if set, it must match the zone `source_list` exactly or you get silence while the WiiM plays  
+
+---
+
+## Troubleshooting
+
+| Symptom | Check |
+|---|---|
+| No music | Decoder entity can play a URL in HA; facade logs `play_media → decoder …`; amp source spelling |
+| Third room replaces second | Update to **0.2.2+** (join merges members) |
+| Group works, still silence | WiiM playing in HA? Amp input selected? Zone volume > 0? |
+| Mid-stream dropouts | MA player setting **HTTP Profile** (try each option) |
 
 ---
 
@@ -167,8 +181,8 @@ data:
 
 ## Developers — releasing
 
-HACS uses `manifest.json` `"version"` + a matching GitHub Release tag (`v0.2.1` ↔ `"0.2.1"`).
+HACS uses `manifest.json` `"version"` + a matching GitHub Release tag (`v0.2.4` ↔ `"0.2.4"`).
 
 ```powershell
-.\tools\release.ps1 0.2.1 -Notes "Short summary for the release"
+.\tools\release.ps1 0.2.4 -Notes "Short summary for the release"
 ```
