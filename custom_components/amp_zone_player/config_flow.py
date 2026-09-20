@@ -26,22 +26,20 @@ SOURCE_NONE = ""
 SOURCE_NONE_LABEL = "None — leave zone source as-is"
 DEFAULT_ENTRY_TITLE = "Amp zones"
 
-# Same friendly names often exist on MA / Alexa / our own facades — hide them
-# from the zone picker so only real amp zone media_players are easy to choose.
-_ZONE_EXCLUDE_PLATFORMS = frozenset(
+# Amp zones come from Control4 Audio (one media_player per speaker zone).
+_ZONE_INTEGRATIONS = frozenset({"c4_audio"})
+
+# Real streamers / decoders — not amp zones, MA facades, or Alexa.
+_DECODER_INTEGRATIONS = frozenset(
     {
-        DOMAIN,
-        "music_assistant",
-        "mass",
-        "alexa_media",
-    }
-)
-_DECODER_EXCLUDE_PLATFORMS = frozenset(
-    {
-        DOMAIN,
-        "music_assistant",
-        "mass",
-        "alexa_media",
+        "wiim",
+        "linkplay",
+        "dlna_dmr",
+        "cast",
+        "bluesound",
+        "heos",
+        "squeezebox",
+        "sonos",
     }
 )
 
@@ -57,29 +55,22 @@ def _normalize_zones(zones: str | list[str]) -> list[str]:
     return list(zones)
 
 
-def _exclude_media_players(
-    hass: HomeAssistant, platforms: frozenset[str]
-) -> list[str]:
-    """Entity ids to hide from EntitySelector (same name, wrong integration)."""
-    registry = er.async_get(hass)
-    return [
-        entry.entity_id
-        for entry in registry.entities.values()
-        if entry.domain == MP_DOMAIN and entry.platform in platforms
-    ]
-
-
 def _media_player_selector(
-    hass: HomeAssistant,
     *,
     multiple: bool,
-    exclude_platforms: frozenset[str],
+    integrations: frozenset[str],
 ) -> selector.EntitySelector:
+    """Entity picker limited to media_players from the given integrations."""
     return selector.EntitySelector(
         selector.EntitySelectorConfig(
-            domain=MP_DOMAIN,
             multiple=multiple,
-            exclude_entities=_exclude_media_players(hass, exclude_platforms),
+            filter=[
+                {
+                    "domain": MP_DOMAIN,
+                    "integration": integration,
+                }
+                for integration in sorted(integrations)
+            ],
         )
     )
 
@@ -133,14 +124,14 @@ def _platform_for(hass: HomeAssistant, entity_id: str) -> str | None:
 async def _async_validate(
     hass: HomeAssistant, data: dict[str, Any]
 ) -> dict[str, str]:
-    """Validate entities exist, are distinct, and zones are real amp players."""
+    """Validate entities exist, are distinct, and match expected integrations."""
     errors: dict[str, str] = {}
     decoder = data[CONF_DECODER]
     zones = _normalize_zones(data[CONF_ZONES])
 
     if hass.states.get(decoder) is None:
         errors[CONF_DECODER] = "entity_not_found"
-    elif _platform_for(hass, decoder) in _DECODER_EXCLUDE_PLATFORMS:
+    elif _platform_for(hass, decoder) not in _DECODER_INTEGRATIONS:
         errors[CONF_DECODER] = "bad_decoder"
 
     if not zones:
@@ -151,7 +142,7 @@ async def _async_validate(
             errors[CONF_ZONES] = "entity_not_found"
         elif decoder in zones:
             errors[CONF_ZONES] = "decoder_in_zones"
-        elif any(_platform_for(hass, z) in _ZONE_EXCLUDE_PLATFORMS for z in zones):
+        elif any(_platform_for(hass, z) not in _ZONE_INTEGRATIONS for z in zones):
             errors[CONF_ZONES] = "bad_zone"
 
     return errors
@@ -161,10 +152,10 @@ def _user_schema(hass: HomeAssistant) -> vol.Schema:
     return vol.Schema(
         {
             vol.Required(CONF_DECODER): _media_player_selector(
-                hass, multiple=False, exclude_platforms=_DECODER_EXCLUDE_PLATFORMS
+                multiple=False, integrations=_DECODER_INTEGRATIONS
             ),
             vol.Required(CONF_ZONES): _media_player_selector(
-                hass, multiple=True, exclude_platforms=_ZONE_EXCLUDE_PLATFORMS
+                multiple=True, integrations=_ZONE_INTEGRATIONS
             ),
             vol.Optional(
                 CONF_NAME_PREFIX, default=DEFAULT_NAME_PREFIX
@@ -180,12 +171,12 @@ def _options_schema(hass: HomeAssistant, data: dict[str, Any]) -> vol.Schema:
             vol.Required(
                 CONF_DECODER, default=data.get(CONF_DECODER)
             ): _media_player_selector(
-                hass, multiple=False, exclude_platforms=_DECODER_EXCLUDE_PLATFORMS
+                multiple=False, integrations=_DECODER_INTEGRATIONS
             ),
             vol.Required(
                 CONF_ZONES, default=data.get(CONF_ZONES, [])
             ): _media_player_selector(
-                hass, multiple=True, exclude_platforms=_ZONE_EXCLUDE_PLATFORMS
+                multiple=True, integrations=_ZONE_INTEGRATIONS
             ),
             vol.Optional(
                 CONF_NAME_PREFIX, default=data.get(CONF_NAME_PREFIX, "")

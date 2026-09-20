@@ -29,8 +29,8 @@
       "entity_not_found": "One or more entities were not found",
       "no_zones": "Select at least one zone",
       "decoder_in_zones": "Decoder cannot also be listed as a zone",
-      "bad_zone": "Pick Control4 (or other amp) zone media players — not Music Assistant, Alexa, or Amp Zone facades",
-      "bad_decoder": "Pick the real streamer (e.g. WiiM) — not Music Assistant, Alexa, or an Amp Zone facade"
+      "bad_zone": "Pick Control4 Audio zone media players only",
+      "bad_decoder": "Pick a real streamer (WiiM, Cast, DLNA, etc.) — not an amp zone",
     },
     "abort": {
       "already_configured": "This Music Assistant Amp Zone Player entry is already configured"
@@ -62,8 +62,8 @@
       "entity_not_found": "One or more entities were not found",
       "no_zones": "Select at least one zone",
       "decoder_in_zones": "Decoder cannot also be listed as a zone",
-      "bad_zone": "Pick Control4 (or other amp) zone media players — not Music Assistant, Alexa, or Amp Zone facades",
-      "bad_decoder": "Pick the real streamer (e.g. WiiM) — not Music Assistant, Alexa, or an Amp Zone facade"
+      "bad_zone": "Pick Control4 Audio zone media players only",
+      "bad_decoder": "Pick a real streamer (WiiM, Cast, DLNA, etc.) — not an amp zone",
     }
   }
 }

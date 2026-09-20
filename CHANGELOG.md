@@ -1,6 +1,10 @@
 # Changelog
 
 
+## 0.2.6 - 2026-09-20
+
+- Zone picker whitelists Control4 Audio only (one media_player per amp zone); decoder picker limited to streamers like WiiM.
+
 ## 0.2.5 - 2026-09-20
 
 - Zone picker hides Music Assistant, Alexa, and facade entities so only real amp zones appear.
