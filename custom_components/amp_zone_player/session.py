@@ -111,14 +111,39 @@ class AmpSession:
     async def async_join(
         self, leader_entity_id: str, group_members: list[str]
     ) -> None:
-        """Join group_members to leader (Composer: add rooms to the session)."""
+        """
+        Add group_members to the session with leader as coordinator.
+
+        Music Assistant often calls join once per newly checked player (only
+        that entity in group_members). Merge into the existing session instead
+        of replacing it, or a third room would knock out the second.
+        """
         leader = self._facades.get(leader_entity_id)
         if leader is None:
             _LOGGER.warning("Join ignored — unknown leader %s", leader_entity_id)
             return
 
         await leader.async_power_zone_on()
-        members = [leader_entity_id]
+
+        # Start from current session (leader first), then add newcomers.
+        members: list[str] = []
+        if self.leader_id == leader_entity_id and self._members:
+            members = [
+                leader_entity_id,
+                *[m for m in self._members if m != leader_entity_id],
+            ]
+        elif leader_entity_id in self._members:
+            # Another facade was leader; this one takes over, keep others.
+            members = [
+                leader_entity_id,
+                *[m for m in self._members if m != leader_entity_id],
+            ]
+        else:
+            members = [leader_entity_id]
+            for existing in self._members:
+                if existing != leader_entity_id and existing in self._facades:
+                    members.append(existing)
+
         for entity_id in group_members:
             if entity_id == leader_entity_id:
                 continue
@@ -128,14 +153,17 @@ class AmpSession:
                     entity_id,
                 )
                 continue
+            if entity_id in members:
+                continue
             member = self._facades[entity_id]
             await member.async_power_zone_on()
-            if entity_id not in members:
-                members.append(entity_id)
+            members.append(entity_id)
 
         self.leader_id = leader_entity_id
         self._members = members
-        _LOGGER.info("Session group: leader=%s members=%s", self.leader_id, self._members)
+        _LOGGER.info(
+            "Session group: leader=%s members=%s", self.leader_id, self._members
+        )
         self.async_notify()
 
     async def async_unjoin(self, facade_entity_id: str) -> None:
