@@ -7,35 +7,30 @@ sys.path.insert(
     0, str(Path(__file__).resolve().parents[1] / "custom_components" / "amp_zone_player")
 )
 
-# naming.py imports homeassistant; stub only what strip/entity_id helpers need.
-import naming as naming_mod  # noqa: E402
+from naming import facade_object_id, short_from_entity_id, strip_amp_prefix  # noqa: E402
 
 
 def test_strip_control4_amp_prefix():
-    assert naming_mod.strip_amp_prefix("Control4 Amp Bar Speakers") == "Bar Speakers"
+    assert strip_amp_prefix("Control4 Amp Bar Speakers") == "Bar Speakers"
     assert (
-        naming_mod.strip_amp_prefix("Control4 Amp Dining Room Speakers")
-        == "Dining Room Speakers"
-    )
-
-
-def test_strip_concatenated_device_and_zone():
-    assert (
-        naming_mod.strip_amp_prefix(
-            "Control4 Amplifier Zones Control4 Amp Bar Speakers"
-        )
+        strip_amp_prefix("Control4 Amplifier Zones Control4 Amp Bar Speakers")
         == "Bar Speakers"
     )
 
 
 def test_short_from_entity_id():
     assert (
-        naming_mod.short_from_entity_id(
-            "media_player.media_closet_control4_amp_bar_speakers"
-        )
+        short_from_entity_id("media_player.media_closet_control4_amp_bar_speakers")
         == "Bar Speakers"
     )
     assert (
-        naming_mod.short_from_entity_id("media_player.control4_amp_kitchen_speakers")
-        == "Kitchen Speakers"
+        short_from_entity_id(
+            "media_player.control4_amplifier_zones_control4_amp_bar_speakers_2"
+        )
+        == "Bar Speakers"
     )
+
+
+def test_facade_object_id():
+    assert facade_object_id("Bar Speakers") == "mazp_bar_speakers"
+    assert facade_object_id("Master Bathroom Speakers") == "mazp_master_bathroom_speakers"

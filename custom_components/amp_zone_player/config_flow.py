@@ -23,6 +23,12 @@ from .const import (
 
 SOURCE_NONE = ""
 SOURCE_NONE_LABEL = "None — leave zone source as-is"
+DEFAULT_ENTRY_TITLE = "Amp zones"
+
+
+def _entry_title(value: str | None) -> str:
+    """Hub/config title. Blank is allowed and becomes a short default."""
+    return (value or "").strip() or DEFAULT_ENTRY_TITLE
 
 
 def _normalize_zones(zones: str | list[str]) -> list[str]:
@@ -119,9 +125,7 @@ class AmpZonePlayerConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                     CONF_NAME_PREFIX: (
                         user_input.get(CONF_NAME_PREFIX) or DEFAULT_NAME_PREFIX
                     ).strip(),
-                    CONF_NAME: (
-                        user_input.get(CONF_NAME) or "Matrix Amplifier Zone Player"
-                    ).strip(),
+                    CONF_NAME: _entry_title(user_input.get(CONF_NAME)),
                 }
                 return await self.async_step_source()
 
@@ -138,9 +142,7 @@ class AmpZonePlayerConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                     vol.Optional(
                         CONF_NAME_PREFIX, default=DEFAULT_NAME_PREFIX
                     ): selector.TextSelector(),
-                    vol.Optional(
-                        CONF_NAME, default="Matrix amp zones"
-                    ): selector.TextSelector(),
+                    vol.Optional(CONF_NAME, default=""): selector.TextSelector(),
                 }
             ),
             errors=errors,

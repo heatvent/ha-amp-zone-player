@@ -42,9 +42,13 @@ from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.helpers.event import async_track_state_change_event
 
 from .const import CONF_DECODER, CONF_NAME_PREFIX, CONF_SOURCE, CONF_ZONES, DOMAIN
-from .naming import facade_name
+from .naming import facade_name, facade_object_id
 
 _LOGGER = logging.getLogger(__name__)
+
+# Device label in HA — kept short on purpose. Config entry title is separate and
+# must never be prepended to player friendly names.
+DEVICE_NAME = "Amp zones"
 
 # Map HA state strings to MediaPlayerState where possible.
 _STATE_MAP = {
@@ -169,14 +173,14 @@ class AmpZoneFacade(MediaPlayerEntity):
         self._attr_name = short
         self._attr_device_info = {
             "identifiers": {(DOMAIN, entry.entry_id)},
-            "name": entry.title,
+            "name": DEVICE_NAME,
             "manufacturer": "Matrix Amplifier Zone Player",
             "model": "Decoder + zone bridge",
         }
 
     async def async_added_to_hass(self) -> None:
         self._registry.refresh_from_states()
-        self._async_force_short_registry_name()
+        self._async_force_short_identity()
 
         @callback
         def _on_change(event: Event) -> None:
@@ -195,8 +199,8 @@ class AmpZoneFacade(MediaPlayerEntity):
         )
 
     @callback
-    def _async_force_short_registry_name(self) -> None:
-        """Stop HA from prepending the device title (legacy has_entity_name)."""
+    def _async_force_short_identity(self) -> None:
+        """Force short friendly name + entity_id; never use hub title as a prefix."""
         if not self.entity_id:
             return
         short = facade_name(self.hass, self._zone_id, self._name_prefix)
@@ -205,21 +209,22 @@ class AmpZoneFacade(MediaPlayerEntity):
         entry = registry.async_get(self.entity_id)
         if entry is None:
             return
-        updates: dict[str, Any] = {}
-        if entry.has_entity_name:
-            updates["has_entity_name"] = False
-        if entry.name is not None:
-            updates["name"] = None
-        if entry.original_name != short:
-            updates["original_name"] = short
-        if updates:
-            registry.async_update_entity(self.entity_id, **updates)
-            _LOGGER.debug(
-                "Forced short name for %s → %s (%s)",
-                self.entity_id,
-                short,
-                updates,
-            )
+
+        updates: dict[str, Any] = {
+            "has_entity_name": False,
+            "name": short,
+            "original_name": short,
+        }
+
+        desired_object_id = facade_object_id(short)
+        desired_entity_id = f"media_player.{desired_object_id}"
+        if self.entity_id != desired_entity_id:
+            conflict = registry.async_get(desired_entity_id)
+            if conflict is None or conflict.unique_id == entry.unique_id:
+                updates["new_entity_id"] = desired_entity_id
+
+        registry.async_update_entity(self.entity_id, **updates)
+        _LOGGER.info("Facade identity %s → name=%s", self.entity_id, short)
 
     # ----- helpers -----
 

@@ -85,11 +85,12 @@ Copy `custom_components/amp_zone_player` into your Home Assistant `config/custom
 3. **Amp input / source** — pick from the dropdown built from each zone’s **source list** (same plain-text labels as the zone Source control, e.g. `WiiM Pro`). This is **not** an entity. Choose **None** to skip auto-routing, or type the exact label if it is missing from the list.
 4. **Name prefix** *(optional)* — prefix for facade entity names
 
-Facade names are the **short room label only** (no device / Control4 prefix):
+Facade names are the **short room label only** (e.g. `Bar Speakers`):
 
-- Prefer the zone’s **area** name when set
-- Else derive from the zone entity id (`…_control4_amp_bar_speakers` → `Bar Speakers`)
-- The config entry title is never prepended; leave **Name prefix** blank
+- Derived from the zone entity id / zone name — not the hub title, not the bare area name
+- Entity ids are rewritten to `media_player.mazp_bar_speakers` so Music Assistant does not show the long Control4 id
+- **Hub name** may be left blank (becomes `Amp zones`); it labels the integration entry only and does **not** prefix player names
+- Leave **Name prefix** blank
 
 Then in **Music Assistant**:
 

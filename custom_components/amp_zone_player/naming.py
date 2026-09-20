@@ -21,8 +21,6 @@ _ZONE_PREFIX = re.compile(
     re.IGNORECASE,
 )
 
-_BRANDED = re.compile(r"control\s*4|c4\s+amp|\bamplifier\s+zones?\b", re.IGNORECASE)
-
 # Leading slug tokens to drop from zone entity_ids.
 _SLUG_DROP = {
     "control4",
@@ -37,6 +35,8 @@ _SLUG_DROP = {
     "closet",
 }
 
+_SLUGIFY = re.compile(r"[^a-z0-9]+")
+
 
 def friendly_name(state: State | None, entity_id: str) -> str:
     if state is None:
@@ -46,7 +46,6 @@ def friendly_name(state: State | None, entity_id: str) -> str:
 
 def strip_amp_prefix(name: str) -> str:
     cleaned = name.strip()
-    # Repeat in case device + entity titles were concatenated.
     for _ in range(3):
         nxt = _ZONE_PREFIX.sub("", cleaned).strip()
         if nxt == cleaned:
@@ -63,6 +62,9 @@ def short_from_entity_id(entity_id: str) -> str | None:
     parts = [p for p in slug.split("_") if p]
     while parts and parts[0].lower() in _SLUG_DROP:
         parts.pop(0)
+    # Drop trailing numeric suffixes from HA collisions (_2).
+    while parts and parts[-1].isdigit():
+        parts.pop()
     if not parts:
         return None
     return " ".join(part.capitalize() for part in parts)
@@ -70,25 +72,21 @@ def short_from_entity_id(entity_id: str) -> str | None:
 
 def short_zone_label(hass: HomeAssistant, zone_entity_id: str) -> str:
     """
-    Short room label only — never the config-entry / Control4 device title.
+    Short room label for HA and Music Assistant.
 
-    Order: area (if not branded) → entity_id slug → stripped friendly name.
+    Prefer the zone entity id / stripped zone name (e.g. Bar Speakers) over the
+    HA area name (often just Bar). Never include the MAZP hub/device title.
     """
-    from homeassistant.helpers import area_registry as ar
-    from homeassistant.helpers import entity_registry as er
-
-    ent = er.async_get(hass).async_get(zone_entity_id)
-    if ent is not None and ent.area_id:
-        area = ar.async_get(hass).async_get_area(ent.area_id)
-        if area is not None and area.name and not _BRANDED.search(area.name):
-            return area.name.strip()
-
     from_id = short_from_entity_id(zone_entity_id)
     if from_id:
         return from_id
 
     raw = friendly_name(hass.states.get(zone_entity_id), zone_entity_id)
-    return strip_amp_prefix(raw)
+    stripped = strip_amp_prefix(raw)
+    if stripped:
+        return stripped
+
+    return raw
 
 
 def facade_name(hass: HomeAssistant, zone_entity_id: str, name_prefix: str) -> str:
@@ -98,3 +96,11 @@ def facade_name(hass: HomeAssistant, zone_entity_id: str, name_prefix: str) -> s
     if not prefix:
         return base
     return f"{prefix} {base}".strip()
+
+
+def facade_object_id(label: str) -> str:
+    """Stable short object id: Bar Speakers → mazp_bar_speakers."""
+    slug = _SLUGIFY.sub("_", label.lower()).strip("_")
+    if not slug:
+        slug = "zone"
+    return f"mazp_{slug}"

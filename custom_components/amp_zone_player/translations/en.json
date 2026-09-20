@@ -7,8 +7,11 @@
         "data": {
           "decoder": "Decoder (real streamer)",
           "zones": "Amp zone media players",
-          "name_prefix": "Name prefix for facade players (optional)",
-          "name": "Entry name"
+          "name_prefix": "Name prefix for facade players (optional — leave blank)",
+          "name": "Hub name (optional — blank becomes Amp zones; does not prefix players)"
+        },
+        "data_description": {
+          "name": "Shown only as the integration entry / device label. Player names stay short (e.g. Bar Speakers)."
         }
       },
       "source": {
