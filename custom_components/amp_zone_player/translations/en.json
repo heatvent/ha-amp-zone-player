@@ -1,0 +1,43 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "Amp Zone Player",
+        "description": "Bridge a decoder (WiiM, etc.) to one or more amp zone media players for Music Assistant.",
+        "data": {
+          "decoder": "Decoder (real streamer)",
+          "zones": "Amp zone media players",
+          "source": "Source name to select on zone when turning on (optional)",
+          "name_prefix": "Name prefix for facade players (optional)",
+          "name": "Entry name"
+        }
+      }
+    },
+    "error": {
+      "entity_not_found": "One or more entities were not found",
+      "no_zones": "Select at least one zone",
+      "decoder_in_zones": "Decoder cannot also be listed as a zone"
+    },
+    "abort": {
+      "already_configured": "This Amp Zone Player entry is already configured"
+    }
+  },
+  "options": {
+    "step": {
+      "init": {
+        "title": "Amp Zone Player options",
+        "data": {
+          "decoder": "Decoder (real streamer)",
+          "zones": "Amp zone media players",
+          "source": "Source name to select on zone when turning on (optional)",
+          "name_prefix": "Name prefix for facade players (optional)"
+        }
+      }
+    },
+    "error": {
+      "entity_not_found": "One or more entities were not found",
+      "no_zones": "Select at least one zone",
+      "decoder_in_zones": "Decoder cannot also be listed as a zone"
+    }
+  }
+}
