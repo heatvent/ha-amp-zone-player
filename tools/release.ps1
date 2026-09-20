@@ -49,7 +49,7 @@ $date = Get-Date -Format "yyyy-MM-dd"
 $bullet = if ($Notes) { $Notes } else { "See commit history." }
 $changelog = Get-Content -LiteralPath $changelogPath -Raw
 if ($changelog -notmatch [regex]::Escape("## $Version")) {
-    $entry = "## $Version — $date`r`n`r`n- $bullet`r`n`r`n"
+    $entry = "## $Version - $date`r`n`r`n- $bullet`r`n`r`n"
     if ($changelog -match '(?s)^(# Changelog\s*)') {
         $changelog = $changelog -replace '(# Changelog\s*)', "`$1`r`n$entry"
     } else {
