@@ -83,6 +83,12 @@ Copy `custom_components/amp_zone_player` into your Home Assistant `config/custom
 3. **Amp input / source** — pick from the dropdown built from each zone’s **source list** (same plain-text labels as the zone Source control, e.g. `WiiM Pro`). This is **not** an entity. Choose **None** to skip auto-routing, or type the exact label if it is missing from the list.
 4. **Name prefix** *(optional)* — prefix for facade entity names
 
+Facade names are shortened automatically for Music Assistant:
+
+- Prefer the zone’s **area** name when one is set in Home Assistant
+- Otherwise strip prefixes like `Control4 Amp ` → `Bar Speakers` instead of `Control4 Amp Bar Speakers`
+- The config entry / device title is **not** prepended to the player name
+
 Then in **Music Assistant**:
 
 - Enable the new facade players

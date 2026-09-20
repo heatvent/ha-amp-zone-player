@@ -41,6 +41,7 @@ from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.helpers.event import async_track_state_change_event
 
 from .const import CONF_DECODER, CONF_NAME_PREFIX, CONF_SOURCE, CONF_ZONES, DOMAIN
+from .naming import facade_name, friendly_name
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -60,9 +61,7 @@ def _merged_config(entry: ConfigEntry) -> dict[str, Any]:
 
 
 def _friendly_name(state: State | None, entity_id: str) -> str:
-    if state is None:
-        return entity_id.split(".", 1)[-1].replace("_", " ").title()
-    return state.name or entity_id
+    return friendly_name(state, entity_id)
 
 
 def _is_on_state(state: State | None) -> bool:
@@ -146,7 +145,9 @@ class AmpZoneRegistry:
 class AmpZoneFacade(MediaPlayerEntity):
     """Proxy: amp zone for power/volume, decoder for transport and metadata."""
 
-    _attr_has_entity_name = True
+    # Full friendly_name is the short label only so Music Assistant does not
+    # prepend the config-entry / device title.
+    _attr_has_entity_name = False
     _attr_should_poll = False
 
     def __init__(
@@ -167,8 +168,7 @@ class AmpZoneFacade(MediaPlayerEntity):
         self._source_name = source_name
         self._name_prefix = name_prefix
         self._attr_unique_id = f"{entry.entry_id}_{zone_entity_id}"
-        base = _friendly_name(hass.states.get(zone_entity_id), zone_entity_id)
-        self._attr_name = f"{name_prefix} {base}".strip() if name_prefix else base
+        self._attr_name = facade_name(hass, zone_entity_id, name_prefix)
         self._attr_device_info = {
             "identifiers": {(DOMAIN, entry.entry_id)},
             "name": entry.title,
