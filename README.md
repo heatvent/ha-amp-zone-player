@@ -1,4 +1,4 @@
-# Matrix Amplifier Zone Player
+# Music Assistant Amp Zone Player
 
 [![hacs_badge](https://img.shields.io/badge/HACS-Custom-41BDF5.svg)](https://github.com/hacs/integration)
 [![GitHub release](https://img.shields.io/github/v/release/heatvent/ha-amp-zone-player)](https://github.com/heatvent/ha-amp-zone-player/releases)
@@ -6,53 +6,73 @@
 
 **GitHub:** [github.com/heatvent/ha-amp-zone-player](https://github.com/heatvent/ha-amp-zone-player)
 
-Turn **matrix amplifier zones** into normal Home Assistant `media_player` entities by bridging each zone to a shared decoder (streamer).
+Use **[Music Assistant](https://www.music-assistant.io/)** with a matrix amp the way Control4 Composer works: play from one room, add other rooms to the session, and control volume per room — without pretending each zone can decode audio.
 
-This integration does **not** talk to the amplifier over UDP or any amp protocol. It controls existing Home Assistant entities:
+A streamer (WiiM, etc.) stays the only decoder. Amp zones only turn on/off and change volume on a shared analog feed.
 
-| Role | What you already have | What this integration uses it for |
+This integration does **not** speak amplifier UDP. It bridges existing Home Assistant entities and is built so Music Assistant can drive them via the **Home Assistant Media Players** provider (HA `join` / `unjoin` grouping). The same entities also work on dashboards and automations.
+
+| Role | What you already have | Used for |
 |---|---|---|
-| **Zone** | Amp zone `media_player` (e.g. [Control4 Audio](https://github.com/heatvent/ha-c4-audio)) | On / off, volume, mute, optional source select |
-| **Decoder** | Real streamer `media_player` (e.g. WiiM Pro) | Play / pause, next, seek, queue, artwork, `play_media` |
+| **Zone** | Amp zone `media_player` (e.g. [Control4 Audio](https://github.com/heatvent/ha-c4-audio)) | On / off, volume, mute, optional source |
+| **Decoder** | Streamer `media_player` (e.g. WiiM Pro) | Play / pause, queue, artwork, `play_media` |
 
-Each configured zone becomes one facade player (e.g. `Bar Speakers`). Facades support **Home Assistant player grouping** (join / unjoin) so you can use them like Control4 Composer: play from one room, add other rooms to the session, and set volume per room. That works in HA and in **[Music Assistant](https://www.music-assistant.io/)** via the Home Assistant Media Players provider.
+---
+
+## Composer-style sessions (core idea)
+
+```text
+Music Assistant
+      │
+      ▼
+┌──────────────────────────────────┐
+│  Session                         │
+│  Leader:  Bar Speakers           │  ← play / pause / queue → WiiM
+│  Members: Kitchen, Patio, …      │  ← join = zone on; volume per room
+└──────────────────────────────────┘
+```
+
+| You do this | What happens |
+|---|---|
+| Play on **Bar Speakers** | Bar becomes **leader**; zone on; stream goes to the WiiM |
+| **Group / join** Kitchen + Patio | Those zones turn on and join the session |
+| Volume on Kitchen | Kitchen zone volume only |
+| Remove / power off Patio | Patio leaves; WiiM keeps playing if others remain |
+
+**Do not** use Music Assistant **SyncGroup** / “Add group player” for these rooms — that is for digitally synced speakers. Use the player **group / members** control (Home Assistant grouping) instead.
 
 ---
 
 ## How it works
 
 ```text
-  Music Assistant · dashboards · automations · voice
+  Music Assistant (HA Media Players provider)
                       │
                       ▼
         ┌─────────────────────────────┐
-        │  Session (this integration) │
-        │  Leader: Bar Speakers       │  ← queue / play / pause
-        │  Members: Kitchen, Patio …  │  ← on/off + volume only
+        │  This integration           │
+        │  Leader + joined members    │
         └─────────────┬───────────────┘
                ┌──────┴──────┐
                ▼             ▼
           Amp zones      Decoder (WiiM)
           on / off       play / pause
           volume         next / art
-          mute           play_media
 ```
 
-One decoder, one queue — many rooms on the same analog stream. Join turns a zone on into the session; unjoin turns it off. The decoder keeps playing until the last member leaves.
-
-**Music Assistant:** enable the facade players under Home Assistant Media Players (hide the raw WiiM). Select a room and play, then use MA’s **group / member** controls (HA grouping) to add other amp facades — not SyncGroup / “Add group player” (those are for digitally synced speakers).
+One decoder, one queue — many rooms on the same analog stream.
 
 ---
 
 ## Features
 
-- One HA `media_player` per amp zone
-- **Composer-style session:** `media_player.join` / `unjoin` + `group_members` (HA GROUPING)
-- Shared decoder for playback, metadata, and `play_media`
+- Built for **Music Assistant** + matrix amp zones (Composer-like add rooms)
+- HA `media_player.join` / `unjoin` and `group_members` (GROUPING)
+- Shared decoder for playback and metadata
 - Optional `select_source` when a zone turns on
-- Per-zone volume; turning a room off does not stop the decoder if other members remain
-- Works with any zone entities that support power + volume — not Control4-specific
-- Configure from the UI (no YAML)
+- Per-zone volume; last member leaving does not require stopping the decoder early for others
+- Any zone entities with power + volume — not Control4-only
+- UI config (no YAML)
 
 ---
 
@@ -61,56 +81,49 @@ One decoder, one queue — many rooms on the same analog stream. Join turns a zo
 | Need | Example |
 |---|---|
 | Home Assistant | 2024.12 or newer |
-| Decoder | WiiM Pro, or any `media_player` that can play media |
-| Amp zones | Zone `media_player`s with on/off + volume (e.g. `c4_audio` zones) |
+| Music Assistant | With **Home Assistant Media Players** provider (typical use) |
+| Decoder | WiiM Pro or any `media_player` that can `play_media` |
+| Amp zones | Zone `media_player`s with on/off + volume (e.g. `c4_audio`) |
 
-Amp chassis control (UDP, routing, EQ, etc.) stays in a separate integration such as [ha-c4-audio](https://github.com/heatvent/ha-c4-audio).
+Amp UDP / chassis control stays in [ha-c4-audio](https://github.com/heatvent/ha-c4-audio) (or similar).
 
 ---
 
-## Install
-
-### HACS (recommended)
+## Install (HACS)
 
 1. **HACS → Integrations → ⋮ → Custom repositories**
 2. Repository: `https://github.com/heatvent/ha-amp-zone-player`
 3. Category: **Integration**
-4. Download **Matrix Amplifier Zone Player** (choose a release version)
+4. Download **Music Assistant Amp Zone Player**
 5. **Restart** Home Assistant
-6. **Settings → Devices & Services → Add Integration → Matrix Amplifier Zone Player**
+6. **Settings → Devices & Services → Add Integration → Music Assistant Amp Zone Player**
 
-> HACS follows **GitHub Releases** only (not `main`). New versions show up after a tagged release.
+HACS tracks **GitHub Releases** only (`hide_default_branch`). After a release, use **⋮ → Update information** if the update is slow to appear.
 
 ### Manual
 
-Copy `custom_components/amp_zone_player` into your Home Assistant `config/custom_components/` folder, restart, then add the integration.
+Copy `custom_components/amp_zone_player` into `config/custom_components/`, restart, then add the integration.
 
 ---
 
 ## Setup
 
-1. **Decoder** — the real streamer that plays content
-2. **Zones** — one or more amp zone `media_player` entities
-3. **Amp input / source** — pick from the dropdown built from each zone’s **source list** (same plain-text labels as the zone Source control, e.g. `WiiM Pro`). This is **not** an entity. Choose **None** to skip auto-routing, or type the exact label if it is missing from the list.
-4. **Name prefix** *(optional)* — leave blank unless you want a prefix on facade names
-5. **Hub name** *(optional)* — blank becomes `Amp zones`; labels the integration entry only and does **not** prefix player names
+1. **Decoder** — WiiM (or other streamer)
+2. **Zones** — amp zone `media_player` entities
+3. **Amp input / source** — plain-text name from the zone source list (e.g. `WiiM Pro`), or None
+4. **Name prefix** — leave blank
+5. **Hub name** — optional (blank → `Amp zones`); does not prefix player names
 
-Facade names are short room labels (e.g. `Bar Speakers`), derived from the zone — not the hub title. Entity ids use that label (`media_player.bar_speakers`) when free.
+Facade names look like `Bar Speakers`; entity ids like `media_player.bar_speakers` when free.
 
-### Using with Music Assistant
+### Music Assistant
 
-1. Settings → Player providers → **Home Assistant Media Players**
-2. Select the facade players (e.g. `Bar Speakers`) — not the raw Control4 zone entities and not the raw WiiM
-3. Hide or disable the decoder in MA if it duplicates the facades
+1. Player providers → **Home Assistant Media Players** → enable the facades only  
+2. Hide/uncheck the raw WiiM and the raw Control4 zone entities  
+3. Select a room → play → use **group / members** to add other facades  
+4. Never use **Add group player** / SyncGroup for these
 
-**Play like Composer**
-
-1. Select a room (e.g. **Bar Speakers**) and play — that room is the session **leader**; audio goes to the WiiM
-2. Use the player **group / members** control to add Kitchen, Patio, etc. (HA join) — those zones turn on
-3. Adjust **per-room volume** on each member; remove a room (unjoin / power off) to leave the session
-4. Do **not** use Settings → Add group player / SyncGroup for these facades
-
-You can also join from HA:
+HA join example:
 
 ```yaml
 action: media_player.join
@@ -128,19 +141,19 @@ data:
 
 | Action | Result |
 |---|---|
-| **Play / play_media** on a facade | That facade becomes leader; zone on; stream/queue on decoder |
-| **Join** other facades | Those zones on; added to `group_members` |
-| **Unjoin / Turn off / Stop** | That zone off; leaves session; decoder keeps going if others remain |
+| **Play / play_media** | Facade becomes leader; zone on; queue/stream on decoder |
+| **Join** | Member zones on; listed in `group_members` |
+| **Unjoin / Off / Stop** | That zone off; leaves session |
 | **Volume / Mute** | That zone only |
-| **Pause / Next / Previous / Seek** | Decoder (shared) |
+| **Pause / Next / Seek** | Decoder (shared) |
 
 ---
 
 ## Limits
 
-- **One queue.** Kitchen and Patio cannot play different tracks through this bridge — they share the decoder.
-- **Not multi-room sync hardware.** Groups mean “several rooms hearing the same analog feed,” not Sonos-style independent players.
-- **Amp still needs its own integration.** This package only proxies existing HA entities; pair it with something like [ha-c4-audio](https://github.com/heatvent/ha-c4-audio) for the chassis.
+- **One queue** — all joined rooms share the decoder stream  
+- **Not digital sync** — rooms share an analog feed; SyncGroup is the wrong tool  
+- **Amp integration required** — this only proxies HA entities  
 
 ---
 
@@ -148,18 +161,14 @@ data:
 
 - Repository: [github.com/heatvent/ha-amp-zone-player](https://github.com/heatvent/ha-amp-zone-player)
 - Issues: [github.com/heatvent/ha-amp-zone-player/issues](https://github.com/heatvent/ha-amp-zone-player/issues)
-- Amp / switch UDP control: [ha-c4-audio](https://github.com/heatvent/ha-c4-audio)
+- Amp / switch UDP: [ha-c4-audio](https://github.com/heatvent/ha-c4-audio)
 
 ---
 
 ## Developers — releasing
 
-HACS updates from **GitHub Releases** and the `"version"` field in `custom_components/amp_zone_player/manifest.json` — not from the README badge. Tag and manifest version must match (`v0.1.9` ↔ `"0.1.9"`).
-
-From a clean `main`:
+HACS uses `manifest.json` `"version"` + a matching GitHub Release tag (`v0.2.1` ↔ `"0.2.1"`).
 
 ```powershell
-.\tools\release.ps1 0.1.9 -Notes "Short summary for the release"
+.\tools\release.ps1 0.2.1 -Notes "Short summary for the release"
 ```
-
-Bumps `manifest.json`, updates the changelog, tags `vX.Y.Z`, and publishes the GitHub Release HACS reads. After a release, in HACS use **⋮ → Update information** (or reload HACS) if the update does not appear right away.

@@ -146,7 +146,7 @@ class AmpZoneFacade(MediaPlayerEntity):
         self._attr_device_info = {
             "identifiers": {(DOMAIN, entry.entry_id)},
             "name": DEVICE_NAME,
-            "manufacturer": "Matrix Amplifier Zone Player",
+            "manufacturer": "Music Assistant Amp Zone Player",
             "model": "Decoder + zone bridge",
         }
 

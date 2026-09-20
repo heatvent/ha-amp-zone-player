@@ -2,8 +2,8 @@
   "config": {
     "step": {
       "user": {
-        "title": "Matrix Amplifier Zone Player",
-        "description": "Choose the decoder (real streamer) and the amp zone media players to expose in Music Assistant.",
+        "title": "Music Assistant Amp Zone Player",
+        "description": "Choose the decoder (real streamer) and the amp zone media players for Music Assistant (Composer-style sessions).",
         "data": {
           "decoder": "Decoder (real streamer)",
           "zones": "Amp zone media players",
@@ -31,13 +31,13 @@
       "decoder_in_zones": "Decoder cannot also be listed as a zone"
     },
     "abort": {
-      "already_configured": "This Matrix Amplifier Zone Player entry is already configured"
+      "already_configured": "This Music Assistant Amp Zone Player entry is already configured"
     }
   },
   "options": {
     "step": {
       "init": {
-        "title": "Matrix Amplifier Zone Player options",
+        "title": "Music Assistant Amp Zone Player options",
         "description": "Update the decoder and amp zones. Next you will pick the amp input source name.",
         "data": {
           "decoder": "Decoder (real streamer)",

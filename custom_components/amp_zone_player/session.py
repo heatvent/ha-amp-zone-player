@@ -124,7 +124,7 @@ class AmpSession:
                 continue
             if entity_id not in self._facades:
                 _LOGGER.warning(
-                    "Join skipped %s — not a Matrix Amplifier Zone Player facade",
+                    "Join skipped %s — not a Music Assistant Amp Zone Player facade",
                     entity_id,
                 )
                 continue

@@ -1,4 +1,4 @@
-"""Config flow for Matrix Amplifier Zone Player."""
+"""Config flow for Music Assistant Amp Zone Player."""
 
 from __future__ import annotations
 
@@ -102,7 +102,7 @@ async def _async_validate(
 
 
 class AmpZonePlayerConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
-    """Handle a config flow for Matrix Amplifier Zone Player."""
+    """Handle a config flow for Music Assistant Amp Zone Player."""
 
     VERSION = 1
 

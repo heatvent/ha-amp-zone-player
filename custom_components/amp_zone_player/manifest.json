@@ -1,6 +1,6 @@
 {
   "domain": "amp_zone_player",
-  "name": "Matrix Amplifier Zone Player",
+  "name": "Music Assistant Amp Zone Player",
   "codeowners": ["@heatvent"],
   "config_flow": true,
   "documentation": "https://github.com/heatvent/ha-amp-zone-player",
