@@ -9,7 +9,6 @@ if TYPE_CHECKING:
     from homeassistant.core import HomeAssistant, State
 
 # "Control4 Amp Bar Speakers" → "Bar Speakers"
-# Also strips a leading device title like "Control4 Amplifier Zones ".
 _ZONE_PREFIX = re.compile(
     r"^(?:"
     r"Control\s*4\s+Amp(?:lifier)?(?:\s+Zones?)?\s+"
@@ -21,7 +20,8 @@ _ZONE_PREFIX = re.compile(
     re.IGNORECASE,
 )
 
-# Leading slug tokens to drop from zone entity_ids.
+_HAS_SPEAKERS = re.compile(r"speakers?$", re.IGNORECASE)
+
 _SLUG_DROP = {
     "control4",
     "c4",
@@ -62,7 +62,6 @@ def short_from_entity_id(entity_id: str) -> str | None:
     parts = [p for p in slug.split("_") if p]
     while parts and parts[0].lower() in _SLUG_DROP:
         parts.pop(0)
-    # Drop trailing numeric suffixes from HA collisions (_2).
     while parts and parts[-1].isdigit():
         parts.pop()
     if not parts:
@@ -70,23 +69,53 @@ def short_from_entity_id(entity_id: str) -> str | None:
     return " ".join(part.capitalize() for part in parts)
 
 
+def with_speakers_suffix(label: str) -> str:
+    """Amp zones are always speakers — keep/restore the Speakers suffix."""
+    label = label.strip()
+    if not label:
+        return label
+    if _HAS_SPEAKERS.search(label):
+        return label
+    return f"{label} Speakers"
+
+
+def _candidate_score(label: str) -> tuple[int, int, int]:
+    """Prefer labels that already include Speakers and are more descriptive."""
+    parts = len(label.split())
+    has_sp = 1 if _HAS_SPEAKERS.search(label) else 0
+    return (has_sp, parts, len(label))
+
+
 def short_zone_label(hass: HomeAssistant, zone_entity_id: str) -> str:
     """
-    Short room label for HA and Music Assistant.
+    Short room label for HA and Music Assistant (e.g. Bar Speakers).
 
-    Prefer the zone entity id / stripped zone name (e.g. Bar Speakers) over the
-    HA area name (often just Bar). Never include the MAZP hub/device title.
+    Uses the linked Control4 zone's names / entity id — never the MAZP hub title
+    and never a bare area name like "Bar" when Speakers belongs on the label.
     """
+    from homeassistant.helpers import entity_registry as er
+
+    candidates: list[str] = []
+
+    ent = er.async_get(hass).async_get(zone_entity_id)
+    if ent is not None:
+        for raw in (ent.original_name, ent.name):
+            if raw:
+                candidates.append(strip_amp_prefix(str(raw)))
+
+    state = hass.states.get(zone_entity_id)
+    candidates.append(strip_amp_prefix(friendly_name(state, zone_entity_id)))
+
     from_id = short_from_entity_id(zone_entity_id)
     if from_id:
-        return from_id
+        candidates.append(from_id)
 
-    raw = friendly_name(hass.states.get(zone_entity_id), zone_entity_id)
-    stripped = strip_amp_prefix(raw)
-    if stripped:
-        return stripped
+    cleaned = [c.strip() for c in candidates if c and c.strip()]
+    if not cleaned:
+        cleaned = [zone_entity_id.split(".", 1)[-1].replace("_", " ").title()]
 
-    return raw
+    best = max(cleaned, key=_candidate_score)
+    return with_speakers_suffix(best)
 
 
 def facade_name(hass: HomeAssistant, zone_entity_id: str, name_prefix: str) -> str:
