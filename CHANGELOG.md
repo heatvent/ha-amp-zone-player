@@ -5,6 +5,11 @@
 
 
 
+
+## 0.1.6 - 2026-09-20
+
+- Short names (Bar Speakers) and mazp_* entity ids; hub name optional and never prefixes players.
+
 ## 0.1.5 - 2026-09-20
 
 - GitHub link in README; short player names only (no Control4/device prefixes).
@@ -25,6 +30,6 @@
 
 - Rename to Matrix Amplifier Zone Player; polished HACS README.
 
-## 0.1.0 ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€šÃ‚Â 2026-09-20
+## 0.1.0 ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã‚Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â 2026-09-20
 
 - Initial scaffold: config flow, zone facades, decoder proxy for Music Assistant.
