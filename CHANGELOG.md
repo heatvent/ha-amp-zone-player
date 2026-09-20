@@ -1,6 +1,10 @@
 # Changelog
 
 
+## 0.2.7 - 2026-09-20
+
+- Fix invalid trailing commas in translations that blocked the integration from loading after setup.
+
 ## 0.2.6 - 2026-09-20
 
 - Zone picker whitelists Control4 Audio only (one media_player per amp zone); decoder picker limited to streamers like WiiM.
