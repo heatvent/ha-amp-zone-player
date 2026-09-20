@@ -22,6 +22,7 @@ from homeassistant.const import (
     SERVICE_MEDIA_PLAY,
     SERVICE_MEDIA_PREVIOUS_TRACK,
     SERVICE_MEDIA_SEEK,
+    SERVICE_MEDIA_STOP,
     SERVICE_TURN_OFF,
     SERVICE_TURN_ON,
     SERVICE_VOLUME_MUTE,
@@ -354,8 +355,11 @@ class AmpZoneFacade(MediaPlayerEntity):
         await self._async_call(SERVICE_MEDIA_PAUSE, self._decoder_id)
 
     async def async_media_stop(self) -> None:
-        """Stop for this room = leave the session (do not stop decoder if others remain)."""
-        await self.async_unjoin_player()
+        """Stop the shared decoder stream (MA calls this before/after play).
+
+        Leaving a room is turn_off / unjoin — not media_stop.
+        """
+        await self._async_call(SERVICE_MEDIA_STOP, self._decoder_id)
 
     async def async_media_next_track(self) -> None:
         await self._async_call(SERVICE_MEDIA_NEXT_TRACK, self._decoder_id)
@@ -374,14 +378,34 @@ class AmpZoneFacade(MediaPlayerEntity):
         """Start/queue on decoder; this facade becomes session leader."""
         if self.entity_id:
             await self._session.async_ensure_leader(self.entity_id)
+
+        # Wake the streamer — some WiiM/LinkPlay entities ignore play_media while off.
+        await self._async_call(SERVICE_TURN_ON, self._decoder_id)
+
+        # Music Assistant HA players always send an HTTP URL with type "music".
+        # Do not forward Cast-style `extra` metadata — many streamers reject it.
+        content_type: MediaType | str = media_type or MediaType.MUSIC
+        if isinstance(media_id, str) and media_id.startswith(("http://", "https://")):
+            content_type = MediaType.MUSIC
+
         data: dict[str, Any] = {
-            "media_content_type": media_type,
+            "media_content_type": content_type,
             "media_content_id": media_id,
         }
-        for key in ("enqueue", "announce", "extra"):
-            if key in kwargs and kwargs[key] is not None:
-                data[key] = kwargs[key]
-        await self._async_call("play_media", self._decoder_id, data)
+        _LOGGER.info(
+            "play_media → decoder %s type=%s id=%s…",
+            self._decoder_id,
+            content_type,
+            (media_id[:80] + "…") if len(media_id) > 80 else media_id,
+        )
+        try:
+            await self._async_call("play_media", self._decoder_id, data)
+        except Exception:
+            _LOGGER.exception(
+                "play_media failed on decoder %s — check WiiM supports URL playback",
+                self._decoder_id,
+            )
+            raise
 
     @property
     def media_content_type(self) -> MediaType | str | None:
