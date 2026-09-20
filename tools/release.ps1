@@ -77,9 +77,9 @@ if ($existingTag) {
 git tag -a $tag -m "Release $Version"
 git push origin $tag
 
-$releaseNotes = if ($Notes) { $Notes } else { "Amp Zone Player $Version" }
+$releaseNotes = if ($Notes) { $Notes } else { "Matrix Amplifier Zone Player $Version" }
 gh release create $tag --title $Version --notes $releaseNotes --latest
 
 Write-Host ""
 Write-Host "Published https://github.com/heatvent/ha-amp-zone-player/releases/tag/$tag"
-Write-Host "In HACS: update Amp Zone Player to $Version, then restart HA."
+Write-Host "In HACS: update Matrix Amplifier Zone Player to $Version, then restart HA."

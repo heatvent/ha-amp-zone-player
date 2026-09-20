@@ -1,4 +1,4 @@
-"""Config flow for Amp Zone Player."""
+"""Config flow for Matrix Amplifier Zone Player."""
 
 from __future__ import annotations
 
@@ -31,7 +31,7 @@ STEP_USER_DATA_SCHEMA = vol.Schema(
         ),
         vol.Optional(CONF_SOURCE, default=""): selector.TextSelector(),
         vol.Optional(CONF_NAME_PREFIX, default=DEFAULT_NAME_PREFIX): selector.TextSelector(),
-        vol.Optional(CONF_NAME, default="Amp zones"): selector.TextSelector(),
+        vol.Optional(CONF_NAME, default="Matrix amp zones"): selector.TextSelector(),
     }
 )
 
@@ -66,7 +66,7 @@ async def _async_validate(
 
 
 class AmpZonePlayerConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
-    """Handle a config flow for Amp Zone Player."""
+    """Handle a config flow for Matrix Amplifier Zone Player."""
 
     VERSION = 1
 
@@ -80,7 +80,7 @@ class AmpZonePlayerConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             user_input[CONF_ZONES] = _normalize_zones(user_input[CONF_ZONES])
             errors = await _async_validate(self.hass, user_input)
             if not errors:
-                title = user_input.get(CONF_NAME) or "Amp Zone Player"
+                title = user_input.get(CONF_NAME) or "Matrix Amplifier Zone Player"
                 return self.async_create_entry(
                     title=title,
                     data={

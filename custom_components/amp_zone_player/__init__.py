@@ -1,4 +1,4 @@
-"""Amp Zone Player — MA-facing facades over a decoder + amp zones."""
+"""Matrix Amplifier Zone Player — MA-facing facades over a decoder + amp zones."""
 
 from __future__ import annotations
 
@@ -10,7 +10,7 @@ from .const import DOMAIN, PLATFORMS
 
 
 async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
-    """Set up Amp Zone Player from a config entry."""
+    """Set up Matrix Amplifier Zone Player from a config entry."""
     hass.data.setdefault(DOMAIN, {})
     await hass.config_entries.async_forward_entry_setups(
         entry, [Platform(p) for p in PLATFORMS]

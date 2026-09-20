@@ -1,4 +1,4 @@
-"""Constants for Amp Zone Player."""
+"""Constants for Matrix Amplifier Zone Player."""
 
 DOMAIN = "amp_zone_player"
 PLATFORMS = ["media_player"]
