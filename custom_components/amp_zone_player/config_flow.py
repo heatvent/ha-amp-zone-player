@@ -10,6 +10,7 @@ from homeassistant import config_entries
 from homeassistant.components.media_player import DOMAIN as MP_DOMAIN
 from homeassistant.const import CONF_NAME
 from homeassistant.core import HomeAssistant, callback
+from homeassistant.helpers import entity_registry as er
 from homeassistant.helpers import selector
 
 from .const import (
@@ -25,6 +26,25 @@ SOURCE_NONE = ""
 SOURCE_NONE_LABEL = "None — leave zone source as-is"
 DEFAULT_ENTRY_TITLE = "Amp zones"
 
+# Same friendly names often exist on MA / Alexa / our own facades — hide them
+# from the zone picker so only real amp zone media_players are easy to choose.
+_ZONE_EXCLUDE_PLATFORMS = frozenset(
+    {
+        DOMAIN,
+        "music_assistant",
+        "mass",
+        "alexa_media",
+    }
+)
+_DECODER_EXCLUDE_PLATFORMS = frozenset(
+    {
+        DOMAIN,
+        "music_assistant",
+        "mass",
+        "alexa_media",
+    }
+)
+
 
 def _entry_title(value: str | None) -> str:
     """Hub/config title. Blank is allowed and becomes a short default."""
@@ -35,6 +55,33 @@ def _normalize_zones(zones: str | list[str]) -> list[str]:
     if isinstance(zones, str):
         return [zones]
     return list(zones)
+
+
+def _exclude_media_players(
+    hass: HomeAssistant, platforms: frozenset[str]
+) -> list[str]:
+    """Entity ids to hide from EntitySelector (same name, wrong integration)."""
+    registry = er.async_get(hass)
+    return [
+        entry.entity_id
+        for entry in registry.entities.values()
+        if entry.domain == MP_DOMAIN and entry.platform in platforms
+    ]
+
+
+def _media_player_selector(
+    hass: HomeAssistant,
+    *,
+    multiple: bool,
+    exclude_platforms: frozenset[str],
+) -> selector.EntitySelector:
+    return selector.EntitySelector(
+        selector.EntitySelectorConfig(
+            domain=MP_DOMAIN,
+            multiple=multiple,
+            exclude_entities=_exclude_media_players(hass, exclude_platforms),
+        )
+    )
 
 
 def _zone_source_names(hass: HomeAssistant, zones: list[str]) -> list[str]:
@@ -78,16 +125,23 @@ def _source_select_schema(
     )
 
 
+def _platform_for(hass: HomeAssistant, entity_id: str) -> str | None:
+    entry = er.async_get(hass).async_get(entity_id)
+    return entry.platform if entry else None
+
+
 async def _async_validate(
     hass: HomeAssistant, data: dict[str, Any]
 ) -> dict[str, str]:
-    """Validate entities exist and are distinct."""
+    """Validate entities exist, are distinct, and zones are real amp players."""
     errors: dict[str, str] = {}
     decoder = data[CONF_DECODER]
     zones = _normalize_zones(data[CONF_ZONES])
 
     if hass.states.get(decoder) is None:
         errors[CONF_DECODER] = "entity_not_found"
+    elif _platform_for(hass, decoder) in _DECODER_EXCLUDE_PLATFORMS:
+        errors[CONF_DECODER] = "bad_decoder"
 
     if not zones:
         errors[CONF_ZONES] = "no_zones"
@@ -95,10 +149,49 @@ async def _async_validate(
         missing = [z for z in zones if hass.states.get(z) is None]
         if missing:
             errors[CONF_ZONES] = "entity_not_found"
-        if decoder in zones:
+        elif decoder in zones:
             errors[CONF_ZONES] = "decoder_in_zones"
+        elif any(_platform_for(hass, z) in _ZONE_EXCLUDE_PLATFORMS for z in zones):
+            errors[CONF_ZONES] = "bad_zone"
 
     return errors
+
+
+def _user_schema(hass: HomeAssistant) -> vol.Schema:
+    return vol.Schema(
+        {
+            vol.Required(CONF_DECODER): _media_player_selector(
+                hass, multiple=False, exclude_platforms=_DECODER_EXCLUDE_PLATFORMS
+            ),
+            vol.Required(CONF_ZONES): _media_player_selector(
+                hass, multiple=True, exclude_platforms=_ZONE_EXCLUDE_PLATFORMS
+            ),
+            vol.Optional(
+                CONF_NAME_PREFIX, default=DEFAULT_NAME_PREFIX
+            ): selector.TextSelector(),
+            vol.Optional(CONF_NAME, default=""): selector.TextSelector(),
+        }
+    )
+
+
+def _options_schema(hass: HomeAssistant, data: dict[str, Any]) -> vol.Schema:
+    return vol.Schema(
+        {
+            vol.Required(
+                CONF_DECODER, default=data.get(CONF_DECODER)
+            ): _media_player_selector(
+                hass, multiple=False, exclude_platforms=_DECODER_EXCLUDE_PLATFORMS
+            ),
+            vol.Required(
+                CONF_ZONES, default=data.get(CONF_ZONES, [])
+            ): _media_player_selector(
+                hass, multiple=True, exclude_platforms=_ZONE_EXCLUDE_PLATFORMS
+            ),
+            vol.Optional(
+                CONF_NAME_PREFIX, default=data.get(CONF_NAME_PREFIX, "")
+            ): selector.TextSelector(),
+        }
+    )
 
 
 class AmpZonePlayerConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
@@ -137,20 +230,7 @@ class AmpZonePlayerConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
 
         return self.async_show_form(
             step_id="user",
-            data_schema=vol.Schema(
-                {
-                    vol.Required(CONF_DECODER): selector.EntitySelector(
-                        selector.EntitySelectorConfig(domain=MP_DOMAIN, multiple=False)
-                    ),
-                    vol.Required(CONF_ZONES): selector.EntitySelector(
-                        selector.EntitySelectorConfig(domain=MP_DOMAIN, multiple=True)
-                    ),
-                    vol.Optional(
-                        CONF_NAME_PREFIX, default=DEFAULT_NAME_PREFIX
-                    ): selector.TextSelector(),
-                    vol.Optional(CONF_NAME, default=""): selector.TextSelector(),
-                }
-            ),
+            data_schema=_user_schema(self.hass),
             errors=errors,
         )
 
@@ -221,23 +301,7 @@ class AmpZonePlayerOptionsFlow(config_entries.OptionsFlow):
 
         return self.async_show_form(
             step_id="init",
-            data_schema=vol.Schema(
-                {
-                    vol.Required(
-                        CONF_DECODER, default=data.get(CONF_DECODER)
-                    ): selector.EntitySelector(
-                        selector.EntitySelectorConfig(domain=MP_DOMAIN, multiple=False)
-                    ),
-                    vol.Required(
-                        CONF_ZONES, default=data.get(CONF_ZONES, [])
-                    ): selector.EntitySelector(
-                        selector.EntitySelectorConfig(domain=MP_DOMAIN, multiple=True)
-                    ),
-                    vol.Optional(
-                        CONF_NAME_PREFIX, default=data.get(CONF_NAME_PREFIX, "")
-                    ): selector.TextSelector(),
-                }
-            ),
+            data_schema=_options_schema(self.hass, data),
             errors=errors,
         )
 
