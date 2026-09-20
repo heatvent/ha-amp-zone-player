@@ -19,9 +19,21 @@ One decoder feeds many rooms. Facades are **rooms on the same stream**, not inde
 
 ## Install (HACS)
 
-1. HACS → Integrations → Custom repositories → this repo URL, category **Integration**.
-2. Download **Amp Zone Player**, restart Home Assistant.
+1. HACS → Integrations → Custom repositories → `https://github.com/heatvent/ha-amp-zone-player`, category **Integration**.
+2. Download **Amp Zone Player** (pick a **release** version), restart Home Assistant.
 3. Settings → Devices & Services → Add Integration → **Amp Zone Player**.
+
+HACS does **not** track `main`. Updates appear only when a new **GitHub Release** is published (`hacs.json` has `hide_default_branch: true`). The release tag (`v0.1.0`) and `manifest.json` `"version"` must match.
+
+## Releasing a new version
+
+From a clean `main`:
+
+```powershell
+.\tools\release.ps1 0.1.1 -Notes "Short summary for the release"
+```
+
+That bumps `manifest.json`, updates `CHANGELOG.md`, commits, pushes, tags `vX.Y.Z`, and creates the GitHub Release HACS reads. Then in HACS use **Update** / redownload and restart HA.
 
 ## Setup
 
