@@ -22,7 +22,7 @@ from .const import (
     DOMAIN,
 )
 
-SOURCE_NONE = ""
+SOURCE_NONE = "__none__"
 SOURCE_NONE_LABEL = "None — leave zone source as-is"
 DEFAULT_ENTRY_TITLE = "Amp zones"
 
@@ -53,6 +53,24 @@ def _normalize_zones(zones: str | list[str]) -> list[str]:
     if isinstance(zones, str):
         return [zones]
     return list(zones)
+
+
+def _normalize_source(value: str | None) -> str:
+    """Stored source name; blank means leave zone source as-is."""
+    raw = (value or "").strip()
+    if not raw or raw == SOURCE_NONE:
+        return ""
+    return raw
+
+
+def _source_form_value(stored: str | None) -> str:
+    """Select option value for a previously saved source."""
+    raw = (stored or "").strip()
+    return raw if raw else SOURCE_NONE
+
+
+def _entry_unique_id(decoder: str, zones: list[str]) -> str:
+    return f"{decoder}|{'|'.join(sorted(zones))}"
 
 
 def _is_amp_speaker_zone(entry: er.RegistryEntry) -> bool:
@@ -118,6 +136,7 @@ def _source_select_schema(
     hass: HomeAssistant, zones: list[str], default: str = SOURCE_NONE
 ) -> vol.Schema:
     """Dropdown of zone source names; custom_value allows typing an exact name."""
+    form_default = _source_form_value(default)
     options: list[selector.SelectOptionDict] = [
         {"value": SOURCE_NONE, "label": SOURCE_NONE_LABEL},
     ]
@@ -125,17 +144,18 @@ def _source_select_schema(
         options.append({"value": name, "label": name})
 
     # Preserve a saved custom name that is not currently in any source_list.
-    if default and default not in {opt["value"] for opt in options}:
-        options.append({"value": default, "label": f"{default} (saved)"})
+    if form_default != SOURCE_NONE and form_default not in {
+        opt["value"] for opt in options
+    }:
+        options.append({"value": form_default, "label": f"{form_default} (saved)"})
 
     return vol.Schema(
         {
-            vol.Optional(CONF_SOURCE, default=default or SOURCE_NONE): selector.SelectSelector(
+            vol.Optional(CONF_SOURCE, default=form_default): selector.SelectSelector(
                 selector.SelectSelectorConfig(
                     options=options,
                     mode=selector.SelectSelectorMode.DROPDOWN,
                     custom_value=True,
-                    translation_key="source",
                 )
             )
         }
@@ -239,9 +259,7 @@ class AmpZonePlayerConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             if not errors:
                 zones = user_input[CONF_ZONES]
                 decoder = user_input[CONF_DECODER]
-                await self.async_set_unique_id(
-                    f"{decoder}|{'|'.join(sorted(zones))}"
-                )
+                await self.async_set_unique_id(_entry_unique_id(decoder, zones))
                 self._abort_if_unique_id_configured()
                 self._partial = {
                     CONF_DECODER: decoder,
@@ -266,7 +284,7 @@ class AmpZonePlayerConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         zones: list[str] = self._partial[CONF_ZONES]
 
         if user_input is not None:
-            source = (user_input.get(CONF_SOURCE) or SOURCE_NONE).strip()
+            source = _normalize_source(user_input.get(CONF_SOURCE))
             title = self._partial[CONF_NAME]
             return self.async_create_entry(
                 title=title,
@@ -314,15 +332,27 @@ class AmpZonePlayerOptionsFlow(config_entries.OptionsFlow):
             user_input[CONF_ZONES] = _normalize_zones(user_input[CONF_ZONES])
             errors = await _async_validate(self.hass, user_input)
             if not errors:
-                self._partial = {
-                    CONF_DECODER: user_input[CONF_DECODER],
-                    CONF_ZONES: user_input[CONF_ZONES],
-                    CONF_NAME_PREFIX: (
-                        user_input.get(CONF_NAME_PREFIX) or DEFAULT_NAME_PREFIX
-                    ).strip(),
-                    CONF_SOURCE: data.get(CONF_SOURCE, SOURCE_NONE),
-                }
-                return await self.async_step_source()
+                decoder = user_input[CONF_DECODER]
+                zones = user_input[CONF_ZONES]
+                new_uid = _entry_unique_id(decoder, zones)
+                for other in self.hass.config_entries.async_entries(DOMAIN):
+                    if (
+                        other.entry_id != self.config_entry.entry_id
+                        and other.unique_id == new_uid
+                    ):
+                        errors["base"] = "already_configured"
+                        break
+                if not errors:
+                    self._partial = {
+                        CONF_DECODER: decoder,
+                        CONF_ZONES: zones,
+                        CONF_NAME_PREFIX: (
+                            user_input.get(CONF_NAME_PREFIX) or DEFAULT_NAME_PREFIX
+                        ).strip(),
+                        CONF_SOURCE: data.get(CONF_SOURCE, ""),
+                        "unique_id": new_uid,
+                    }
+                    return await self.async_step_source()
 
         return self.async_show_form(
             step_id="init",
@@ -335,18 +365,23 @@ class AmpZonePlayerOptionsFlow(config_entries.OptionsFlow):
     ) -> config_entries.ConfigFlowResult:
         """Pick amp input source name from zone source lists."""
         zones: list[str] = self._partial[CONF_ZONES]
-        default = (self._partial.get(CONF_SOURCE) or SOURCE_NONE).strip()
+        default = self._partial.get(CONF_SOURCE, "")
 
         if user_input is not None:
-            return self.async_create_entry(
-                title="",
-                data={
-                    CONF_DECODER: self._partial[CONF_DECODER],
-                    CONF_ZONES: zones,
-                    CONF_SOURCE: (user_input.get(CONF_SOURCE) or SOURCE_NONE).strip(),
-                    CONF_NAME_PREFIX: self._partial[CONF_NAME_PREFIX],
-                },
+            new_data = {
+                CONF_DECODER: self._partial[CONF_DECODER],
+                CONF_ZONES: zones,
+                CONF_SOURCE: _normalize_source(user_input.get(CONF_SOURCE)),
+                CONF_NAME_PREFIX: self._partial[CONF_NAME_PREFIX],
+            }
+            # Keep config in entry.data (not options) and refresh unique_id.
+            self.hass.config_entries.async_update_entry(
+                self.config_entry,
+                data=new_data,
+                options={},
+                unique_id=self._partial["unique_id"],
             )
+            return self.async_create_entry(data={})
 
         return self.async_show_form(
             step_id="source",

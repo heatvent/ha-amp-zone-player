@@ -71,7 +71,7 @@ One decoder, one queue — many rooms on the same analog stream.
 - Shared decoder for playback and metadata
 - Optional `select_source` when a zone turns on
 - Per-zone volume; leaving a room does not stop the decoder for others
-- Any zone entities with power + volume — not Control4-only
+- Zone picker lists **Control4 Audio** speaker zones only (e.g. Bar Speakers)
 - UI config (no YAML)
 
 ---
@@ -83,7 +83,7 @@ One decoder, one queue — many rooms on the same analog stream.
 | Home Assistant | 2024.12 or newer |
 | Music Assistant | With **Home Assistant Media Players** provider (typical use) |
 | Decoder | WiiM Pro or any `media_player` that can `play_media` with a URL |
-| Amp zones | Zone `media_player`s with on/off + volume (e.g. `c4_audio`) |
+| Amp zones | [Control4 Audio](https://github.com/heatvent/ha-c4-audio) speaker-zone `media_player`s |
 
 Amp UDP / chassis control stays in [ha-c4-audio](https://github.com/heatvent/ha-c4-audio) (or similar).
 
@@ -108,8 +108,8 @@ Copy `custom_components/amp_zone_player` into `config/custom_components/`, resta
 
 ## Setup
 
-1. **Decoder** — WiiM (or other streamer)
-2. **Zones** — amp zone `media_player` entities
+1. **Decoder** — WiiM (or Cast / DLNA / similar streamer)
+2. **Zones** — Control4 Audio **speaker** zones only (Bar Speakers, Kitchen Speakers, …). The bare Control4 Amp / Switch player is hidden.
 3. **Amp input / source** — plain-text name from the zone source list (e.g. `WiiM Pro`), or None
 4. **Name prefix** — leave blank
 5. **Hub name** — optional (blank → `Amp zones`); does not prefix player names

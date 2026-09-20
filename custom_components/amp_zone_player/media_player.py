@@ -39,6 +39,7 @@ from homeassistant.const import (
 from homeassistant.core import Event, HomeAssistant, State, callback
 from homeassistant.exceptions import HomeAssistantError
 from homeassistant.helpers import entity_registry as er
+from homeassistant.helpers.device_registry import DeviceInfo
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.helpers.event import async_track_state_change_event
 
@@ -158,12 +159,12 @@ class AmpZoneFacade(MediaPlayerEntity):
         self._attr_unique_id = f"{entry.entry_id}_{zone_entity_id}"
         short = facade_name(hass, zone_entity_id, name_prefix)
         self._attr_name = short
-        self._attr_device_info = {
-            "identifiers": {(DOMAIN, entry.entry_id)},
-            "name": (entry.title or "").strip() or DEVICE_NAME_FALLBACK,
-            "manufacturer": "Music Assistant Amp Zone Player",
-            "model": "Decoder + zone bridge",
-        }
+        self._attr_device_info = DeviceInfo(
+            identifiers={(DOMAIN, entry.entry_id)},
+            name=(entry.title or "").strip() or DEVICE_NAME_FALLBACK,
+            manufacturer="Music Assistant Amp Zone Player",
+            model="Decoder + zone bridge",
+        )
 
     @property
     def zone_entity_id(self) -> str:
@@ -211,7 +212,14 @@ class AmpZoneFacade(MediaPlayerEntity):
             conflict = registry.async_get(desired)
             if conflict is None or conflict.unique_id == entry.unique_id:
                 updates["new_entity_id"] = desired
-        registry.async_update_entity(self.entity_id, **updates)
+        try:
+            registry.async_update_entity(self.entity_id, **updates)
+        except Exception:  # noqa: BLE001 — never fail setup over a rename
+            _LOGGER.exception(
+                "Could not normalize name/entity_id for %s (wanted %s)",
+                self.entity_id,
+                desired,
+            )
 
     def _zone(self) -> State | None:
         return self.hass.states.get(self._zone_id)
