@@ -9,5 +9,5 @@
   "issue_tracker": "https://github.com/heatvent/ha-amp-zone-player/issues",
   "loggers": ["custom_components.amp_zone_player"],
   "requirements": [],
-  "version": "0.2.8"
+  "version": "0.2.9"
 }
