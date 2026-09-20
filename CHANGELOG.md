@@ -3,6 +3,11 @@
 
 
 
+
+## 0.1.4 - 2026-09-20
+
+- Auto-shorten player names (area or strip Control4 Amp prefix); no manual rename needed.
+
 ## 0.1.3 - 2026-09-20
 
 - Fix: show as Integration (hub) not Helper; nest zone facades under the device.
@@ -15,6 +20,6 @@
 
 - Rename to Matrix Amplifier Zone Player; polished HACS README.
 
-## 0.1.0 ÃƒÂ¢Ã¢â€šÂ¬Ã¢â‚¬Â 2026-09-20
+## 0.1.0 ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â 2026-09-20
 
 - Initial scaffold: config flow, zone facades, decoder proxy for Music Assistant.
