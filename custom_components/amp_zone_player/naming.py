@@ -128,8 +128,8 @@ def facade_name(hass: HomeAssistant, zone_entity_id: str, name_prefix: str) -> s
 
 
 def facade_object_id(label: str) -> str:
-    """Stable short object id: Bar Speakers → mazp_bar_speakers."""
+    """Stable short object id: Bar Speakers → bar_speakers."""
     slug = _SLUGIFY.sub("_", label.lower()).strip("_")
     if not slug:
         slug = "zone"
-    return f"mazp_{slug}"
+    return slug

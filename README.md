@@ -87,10 +87,12 @@ Copy `custom_components/amp_zone_player` into your Home Assistant `config/custom
 
 Facade names are the **short room label only** (e.g. `Bar Speakers`):
 
-- Derived from the zone entity id / zone name — not the hub title, not the bare area name
-- Entity ids are rewritten to `media_player.mazp_bar_speakers` so Music Assistant does not show the long Control4 id
+- Derived from the zone entity — not the hub title
+- Entity ids use that label (`media_player.bar_speakers`) when free
 - **Hub name** may be left blank (becomes `Amp zones`); it labels the integration entry only and does **not** prefix player names
 - Leave **Name prefix** blank
+
+This integration does **not** talk to the amp over UDP. It wraps existing zone `media_player`s (on/off, volume, mute, optional source) and a decoder (play/pause/queue/art) so each room is a normal HA media player — usable in Music Assistant, dashboards, automations, etc.
 
 Then in **Music Assistant**:
 

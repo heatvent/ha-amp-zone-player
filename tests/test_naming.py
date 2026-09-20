@@ -31,4 +31,4 @@ def test_short_from_entity_id():
 
 
 def test_facade_object_id():
-    assert facade_object_id("Bar Speakers") == "mazp_bar_speakers"
+    assert facade_object_id("Bar Speakers") == "bar_speakers"
