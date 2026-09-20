@@ -80,7 +80,7 @@ Copy `custom_components/amp_zone_player` into your Home Assistant `config/custom
 
 1. **Decoder** — the real streamer Music Assistant should drive for content
 2. **Zones** — one or more amp zone `media_player` entities
-3. **Source** *(optional)* — name passed to `select_source` on the zone when it turns on (e.g. `WiiM Pro`)
+3. **Amp input / source** — pick from the dropdown built from each zone’s **source list** (same plain-text labels as the zone Source control, e.g. `WiiM Pro`). This is **not** an entity. Choose **None** to skip auto-routing, or type the exact label if it is missing from the list.
 4. **Name prefix** *(optional)* — prefix for facade entity names
 
 Then in **Music Assistant**:

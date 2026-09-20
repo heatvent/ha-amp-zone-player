@@ -3,13 +3,22 @@
     "step": {
       "user": {
         "title": "Matrix Amplifier Zone Player",
-        "description": "Bridge a decoder (WiiM, etc.) to matrix amp zone media players for Music Assistant.",
+        "description": "Choose the decoder (real streamer) and the amp zone media players to expose in Music Assistant.",
         "data": {
           "decoder": "Decoder (real streamer)",
           "zones": "Amp zone media players",
-          "source": "Source name to select on zone when turning on (optional)",
           "name_prefix": "Name prefix for facade players (optional)",
           "name": "Entry name"
+        }
+      },
+      "source": {
+        "title": "Amp input when turning on",
+        "description": "{hint}\n\nThe list is built from each zone’s **source_list** (the same names you see in the zone more-info Source dropdown). Pick one, leave as None, or type the exact plain-text label if it is missing.",
+        "data": {
+          "source": "Amp input / source name"
+        },
+        "data_description": {
+          "source": "Plain text matching the zone source list (e.g. WiiM Pro). Not a media_player entity ID."
         }
       }
     },
@@ -26,11 +35,21 @@
     "step": {
       "init": {
         "title": "Matrix Amplifier Zone Player options",
+        "description": "Update the decoder and amp zones. Next you will pick the amp input source name.",
         "data": {
           "decoder": "Decoder (real streamer)",
           "zones": "Amp zone media players",
-          "source": "Source name to select on zone when turning on (optional)",
           "name_prefix": "Name prefix for facade players (optional)"
+        }
+      },
+      "source": {
+        "title": "Amp input when turning on",
+        "description": "{hint}\n\nThe list is built from each zone’s **source_list**. Pick one, leave as None, or type the exact plain-text label.",
+        "data": {
+          "source": "Amp input / source name"
+        },
+        "data_description": {
+          "source": "Plain text matching the zone source list (e.g. WiiM Pro). Not a media_player entity ID."
         }
       }
     },
