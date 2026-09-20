@@ -77,11 +77,26 @@ async def async_setup_entry(
     """Set up one facade per configured zone."""
     config = _merged_config(entry)
     decoder = config[CONF_DECODER]
-    zones: list[str] = list(config[CONF_ZONES])
+    zones: list[str] = list(config.get(CONF_ZONES) or [])
     source = (config.get(CONF_SOURCE) or "").strip() or None
     prefix = (config.get(CONF_NAME_PREFIX) or "").strip()
 
+    if not zones:
+        _LOGGER.error(
+            "No zones configured for %s — reconfigure the integration and select amp zone media players",
+            entry.title,
+        )
+        return
+
+    _LOGGER.info(
+        "Creating %s Matrix Amplifier Zone Player facade(s) on device '%s' (decoder=%s)",
+        len(zones),
+        entry.title,
+        decoder,
+    )
+
     registry = AmpZoneRegistry(hass, entry.entry_id, zones)
+    hass.data.setdefault(DOMAIN, {})
     hass.data[DOMAIN][entry.entry_id] = registry
 
     async_add_entities(
@@ -131,7 +146,7 @@ class AmpZoneRegistry:
 class AmpZoneFacade(MediaPlayerEntity):
     """Proxy: amp zone for power/volume, decoder for transport and metadata."""
 
-    _attr_has_entity_name = False
+    _attr_has_entity_name = True
     _attr_should_poll = False
 
     def __init__(
@@ -152,6 +167,8 @@ class AmpZoneFacade(MediaPlayerEntity):
         self._source_name = source_name
         self._name_prefix = name_prefix
         self._attr_unique_id = f"{entry.entry_id}_{zone_entity_id}"
+        base = _friendly_name(hass.states.get(zone_entity_id), zone_entity_id)
+        self._attr_name = f"{name_prefix} {base}".strip() if name_prefix else base
         self._attr_device_info = {
             "identifiers": {(DOMAIN, entry.entry_id)},
             "name": entry.title,
@@ -195,13 +212,6 @@ class AmpZoneFacade(MediaPlayerEntity):
         )
 
     # ----- identity -----
-
-    @property
-    def name(self) -> str:
-        base = _friendly_name(self._zone(), self._zone_id)
-        if self._name_prefix:
-            return f"{self._name_prefix} {base}"
-        return base
 
     @property
     def available(self) -> bool:
