@@ -15,7 +15,7 @@ This integration does **not** talk to the amplifier over UDP or any amp protocol
 | **Zone** | Amp zone `media_player` (e.g. [Control4 Audio](https://github.com/heatvent/ha-c4-audio)) | On / off, volume, mute, optional source select |
 | **Decoder** | Real streamer `media_player` (e.g. WiiM Pro) | Play / pause, next, seek, queue, artwork, `play_media` |
 
-Each configured zone becomes one facade player (e.g. `Bar Speakers`). Those players work anywhere HA media players work — dashboards, automations, voice — and are especially useful for **[Music Assistant](https://www.music-assistant.io/)**, which can treat each room as a player while the WiiM (or other decoder) remains the only device that actually decodes audio.
+Each configured zone becomes one facade player (e.g. `Bar Speakers`). Facades support **Home Assistant player grouping** (join / unjoin) so you can use them like Control4 Composer: play from one room, add other rooms to the session, and set volume per room. That works in HA and in **[Music Assistant](https://www.music-assistant.io/)** via the Home Assistant Media Players provider.
 
 ---
 
@@ -26,30 +26,33 @@ Each configured zone becomes one facade player (e.g. `Bar Speakers`). Those play
                       │
                       ▼
         ┌─────────────────────────────┐
-        │  Zone facades (this integ.) │  Bar Speakers · Kitchen · …
+        │  Session (this integration) │
+        │  Leader: Bar Speakers       │  ← queue / play / pause
+        │  Members: Kitchen, Patio …  │  ← on/off + volume only
         └─────────────┬───────────────┘
                ┌──────┴──────┐
                ▼             ▼
-          Amp zones      Decoder
+          Amp zones      Decoder (WiiM)
           on / off       play / pause
           volume         next / art
           mute           play_media
 ```
 
-One decoder, one queue — many rooms on the same analog stream. That matches how a matrix amp is wired.
+One decoder, one queue — many rooms on the same analog stream. Join turns a zone on into the session; unjoin turns it off. The decoder keeps playing until the last member leaves.
 
-**Music Assistant (optional but common):** add the Home Assistant Media Players provider, select these facade players, and hide the raw decoder so you do not get two targets for one streamer. Group facades for whole-home listening on the same feed.
+**Music Assistant:** enable the facade players under Home Assistant Media Players (hide the raw WiiM). Select a room and play, then use MA’s **group / member** controls (HA grouping) to add other amp facades — not SyncGroup / “Add group player” (those are for digitally synced speakers).
 
 ---
 
 ## Features
 
-- One HA `media_player` per amp zone (usable beyond Music Assistant)
+- One HA `media_player` per amp zone
+- **Composer-style session:** `media_player.join` / `unjoin` + `group_members` (HA GROUPING)
 - Shared decoder for playback, metadata, and `play_media`
-- Optional `select_source` when a zone turns on (route to the jack your streamer uses)
-- Turning a zone **off** does not stop the decoder while other facade zones are still on
+- Optional `select_source` when a zone turns on
+- Per-zone volume; turning a room off does not stop the decoder if other members remain
 - Works with any zone entities that support power + volume — not Control4-specific
-- Configure and change options from the UI (no YAML)
+- Configure from the UI (no YAML)
 
 ---
 
@@ -97,8 +100,27 @@ Facade names are short room labels (e.g. `Bar Speakers`), derived from the zone 
 ### Using with Music Assistant
 
 1. Settings → Player providers → **Home Assistant Media Players**
-2. Select the facade players (short names / `bar_speakers` ids) — not the raw Control4 zone entities and not the raw decoder if you want rooms as the only targets
+2. Select the facade players (e.g. `Bar Speakers`) — not the raw Control4 zone entities and not the raw WiiM
 3. Hide or disable the decoder in MA if it duplicates the facades
+
+**Play like Composer**
+
+1. Select a room (e.g. **Bar Speakers**) and play — that room is the session **leader**; audio goes to the WiiM
+2. Use the player **group / members** control to add Kitchen, Patio, etc. (HA join) — those zones turn on
+3. Adjust **per-room volume** on each member; remove a room (unjoin / power off) to leave the session
+4. Do **not** use Settings → Add group player / SyncGroup for these facades
+
+You can also join from HA:
+
+```yaml
+action: media_player.join
+target:
+  entity_id: media_player.bar_speakers
+data:
+  group_members:
+    - media_player.kitchen_speakers
+    - media_player.patio_speakers
+```
 
 ---
 
@@ -106,11 +128,11 @@ Facade names are short room labels (e.g. `Bar Speakers`), derived from the zone 
 
 | Action | Result |
 |---|---|
-| **Turn on / Play** | Zone on → optional source select → play on decoder |
-| **Volume / Mute** | Zone only |
-| **Pause / Next / Previous / Seek** | Decoder |
-| **Stop** | That zone off (decoder keeps running if other zones are on) |
-| **Off** | Zone off; decoder left alone if another facade zone is still on |
+| **Play / play_media** on a facade | That facade becomes leader; zone on; stream/queue on decoder |
+| **Join** other facades | Those zones on; added to `group_members` |
+| **Unjoin / Turn off / Stop** | That zone off; leaves session; decoder keeps going if others remain |
+| **Volume / Mute** | That zone only |
+| **Pause / Next / Previous / Seek** | Decoder (shared) |
 
 ---
 
