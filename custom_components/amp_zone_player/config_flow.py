@@ -55,24 +55,50 @@ def _normalize_zones(zones: str | list[str]) -> list[str]:
     return list(zones)
 
 
+def _is_amp_speaker_zone(entry: er.RegistryEntry) -> bool:
+    """True for room speaker zones; false for bare amp/switch media_players."""
+    if entry.domain != MP_DOMAIN or entry.platform not in _ZONE_INTEGRATIONS:
+        return False
+    if entry.disabled_by is not None:
+        return False
+    object_id = entry.entity_id.partition(".")[2]
+    # Control4 Switch matrix endpoints are not room zones.
+    if object_id.startswith("control4_switch_"):
+        return False
+    label = (entry.name or entry.original_name or object_id).lower()
+    return "speaker" in label
+
+
+def _amp_speaker_zone_ids(hass: HomeAssistant) -> list[str]:
+    registry = er.async_get(hass)
+    return sorted(
+        entry.entity_id
+        for entry in registry.entities.values()
+        if _is_amp_speaker_zone(entry)
+    )
+
+
 def _media_player_selector(
     *,
     multiple: bool,
     integrations: frozenset[str],
+    include_entities: list[str] | None = None,
 ) -> selector.EntitySelector:
     """Entity picker limited to media_players from the given integrations."""
-    return selector.EntitySelector(
-        selector.EntitySelectorConfig(
-            multiple=multiple,
-            filter=[
-                {
-                    "domain": MP_DOMAIN,
-                    "integration": integration,
-                }
-                for integration in sorted(integrations)
-            ],
-        )
-    )
+    config: dict[str, Any] = {
+        "multiple": multiple,
+        "filter": [
+            {
+                "domain": MP_DOMAIN,
+                "integration": integration,
+            }
+            for integration in sorted(integrations)
+        ],
+    }
+    # Empty allow-list would hide everything; fall back to integration filter.
+    if include_entities:
+        config["include_entities"] = include_entities
+    return selector.EntitySelector(selector.EntitySelectorConfig(**config))
 
 
 def _zone_source_names(hass: HomeAssistant, zones: list[str]) -> list[str]:
@@ -142,7 +168,11 @@ async def _async_validate(
             errors[CONF_ZONES] = "entity_not_found"
         elif decoder in zones:
             errors[CONF_ZONES] = "decoder_in_zones"
-        elif any(_platform_for(hass, z) not in _ZONE_INTEGRATIONS for z in zones):
+        elif any(
+            (reg := er.async_get(hass).async_get(z)) is None
+            or not _is_amp_speaker_zone(reg)
+            for z in zones
+        ):
             errors[CONF_ZONES] = "bad_zone"
 
     return errors
@@ -155,7 +185,9 @@ def _user_schema(hass: HomeAssistant) -> vol.Schema:
                 multiple=False, integrations=_DECODER_INTEGRATIONS
             ),
             vol.Required(CONF_ZONES): _media_player_selector(
-                multiple=True, integrations=_ZONE_INTEGRATIONS
+                multiple=True,
+                integrations=_ZONE_INTEGRATIONS,
+                include_entities=_amp_speaker_zone_ids(hass),
             ),
             vol.Optional(
                 CONF_NAME_PREFIX, default=DEFAULT_NAME_PREFIX
@@ -176,7 +208,9 @@ def _options_schema(hass: HomeAssistant, data: dict[str, Any]) -> vol.Schema:
             vol.Required(
                 CONF_ZONES, default=data.get(CONF_ZONES, [])
             ): _media_player_selector(
-                multiple=True, integrations=_ZONE_INTEGRATIONS
+                multiple=True,
+                integrations=_ZONE_INTEGRATIONS,
+                include_entities=_amp_speaker_zone_ids(hass),
             ),
             vol.Optional(
                 CONF_NAME_PREFIX, default=data.get(CONF_NAME_PREFIX, "")

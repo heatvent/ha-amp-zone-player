@@ -29,7 +29,7 @@
       "entity_not_found": "One or more entities were not found",
       "no_zones": "Select at least one zone",
       "decoder_in_zones": "Decoder cannot also be listed as a zone",
-      "bad_zone": "Pick Control4 Audio zone media players only",
+      "bad_zone": "Pick Control4 Audio speaker zones only (not the bare Control4 Amp / Switch player)",
       "bad_decoder": "Pick a real streamer (WiiM, Cast, DLNA, etc.) — not an amp zone"
     },
     "abort": {
@@ -62,7 +62,7 @@
       "entity_not_found": "One or more entities were not found",
       "no_zones": "Select at least one zone",
       "decoder_in_zones": "Decoder cannot also be listed as a zone",
-      "bad_zone": "Pick Control4 Audio zone media players only",
+      "bad_zone": "Pick Control4 Audio speaker zones only (not the bare Control4 Amp / Switch player)",
       "bad_decoder": "Pick a real streamer (WiiM, Cast, DLNA, etc.) — not an amp zone"
     }
   }

@@ -1,6 +1,10 @@
 # Changelog
 
 
+## 0.2.8 - 2026-09-20
+
+- Zone picker hides bare Control4 Amp / Switch players; only speaker zones (e.g. Bar Speakers) are listed.
+
 ## 0.2.7 - 2026-09-20
 
 - Fix invalid trailing commas in translations that blocked the integration from loading after setup.
