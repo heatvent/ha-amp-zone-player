@@ -1,8 +1,13 @@
 # Changelog
 
+
+## 0.2.5 - 2026-09-20
+
+- Zone picker hides Music Assistant, Alexa, and facade entities so only real amp zones appear.
+
 ## 0.2.4 - 2026-09-20
 
-- Harden playback and grouping: safe service calls, stop→pause fallback, source select soft-fail, join skips failed zones.
+- Harden playback and grouping: safe service calls, stopâ†’pause fallback, source select soft-fail, join skips failed zones.
 - Only advertise SEEK among decoder passthrough features (no browse/shuffle without handlers).
 - README behavior table matches code (Stop vs Unjoin); troubleshooting section added.
 - Prevent duplicate config entries for the same decoder+zones set.
