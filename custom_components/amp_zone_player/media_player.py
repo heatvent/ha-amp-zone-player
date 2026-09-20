@@ -37,11 +37,12 @@ from homeassistant.const import (
     STATE_UNKNOWN,
 )
 from homeassistant.core import Event, HomeAssistant, State, callback
+from homeassistant.helpers import entity_registry as er
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.helpers.event import async_track_state_change_event
 
 from .const import CONF_DECODER, CONF_NAME_PREFIX, CONF_SOURCE, CONF_ZONES, DOMAIN
-from .naming import facade_name, friendly_name
+from .naming import facade_name
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -58,10 +59,6 @@ _STATE_MAP = {
 
 def _merged_config(entry: ConfigEntry) -> dict[str, Any]:
     return {**entry.data, **entry.options}
-
-
-def _friendly_name(state: State | None, entity_id: str) -> str:
-    return friendly_name(state, entity_id)
 
 
 def _is_on_state(state: State | None) -> bool:
@@ -168,7 +165,8 @@ class AmpZoneFacade(MediaPlayerEntity):
         self._source_name = source_name
         self._name_prefix = name_prefix
         self._attr_unique_id = f"{entry.entry_id}_{zone_entity_id}"
-        self._attr_name = facade_name(hass, zone_entity_id, name_prefix)
+        short = facade_name(hass, zone_entity_id, name_prefix)
+        self._attr_name = short
         self._attr_device_info = {
             "identifiers": {(DOMAIN, entry.entry_id)},
             "name": entry.title,
@@ -178,6 +176,7 @@ class AmpZoneFacade(MediaPlayerEntity):
 
     async def async_added_to_hass(self) -> None:
         self._registry.refresh_from_states()
+        self._async_force_short_registry_name()
 
         @callback
         def _on_change(event: Event) -> None:
@@ -194,6 +193,33 @@ class AmpZoneFacade(MediaPlayerEntity):
                 self.hass, [self._zone_id, self._decoder_id], _on_change
             )
         )
+
+    @callback
+    def _async_force_short_registry_name(self) -> None:
+        """Stop HA from prepending the device title (legacy has_entity_name)."""
+        if not self.entity_id:
+            return
+        short = facade_name(self.hass, self._zone_id, self._name_prefix)
+        self._attr_name = short
+        registry = er.async_get(self.hass)
+        entry = registry.async_get(self.entity_id)
+        if entry is None:
+            return
+        updates: dict[str, Any] = {}
+        if entry.has_entity_name:
+            updates["has_entity_name"] = False
+        if entry.name is not None:
+            updates["name"] = None
+        if entry.original_name != short:
+            updates["original_name"] = short
+        if updates:
+            registry.async_update_entity(self.entity_id, **updates)
+            _LOGGER.debug(
+                "Forced short name for %s → %s (%s)",
+                self.entity_id,
+                short,
+                updates,
+            )
 
     # ----- helpers -----
 

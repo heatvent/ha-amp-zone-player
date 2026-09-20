@@ -4,6 +4,8 @@
 [![GitHub release](https://img.shields.io/github/v/release/heatvent/ha-amp-zone-player)](https://github.com/heatvent/ha-amp-zone-player/releases)
 [![HA](https://img.shields.io/badge/Home%20Assistant-2024.12%2B-blue.svg)](https://www.home-assistant.io/)
 
+**GitHub:** [github.com/heatvent/ha-amp-zone-player](https://github.com/heatvent/ha-amp-zone-player)
+
 Bring **matrix amplifier zones** into Music Assistant as real players — without pretending the amp can decode audio.
 
 A streamer (WiiM, Chromecast, etc.) stays the only device that plays music. Each amp zone becomes a facade `media_player` that Music Assistant can select, volume, and group. Power and volume go to the zone; transport, artwork, and queues go to the decoder.
@@ -83,11 +85,11 @@ Copy `custom_components/amp_zone_player` into your Home Assistant `config/custom
 3. **Amp input / source** — pick from the dropdown built from each zone’s **source list** (same plain-text labels as the zone Source control, e.g. `WiiM Pro`). This is **not** an entity. Choose **None** to skip auto-routing, or type the exact label if it is missing from the list.
 4. **Name prefix** *(optional)* — prefix for facade entity names
 
-Facade names are shortened automatically for Music Assistant:
+Facade names are the **short room label only** (no device / Control4 prefix):
 
-- Prefer the zone’s **area** name when one is set in Home Assistant
-- Otherwise strip prefixes like `Control4 Amp ` → `Bar Speakers` instead of `Control4 Amp Bar Speakers`
-- The config entry / device title is **not** prepended to the player name
+- Prefer the zone’s **area** name when set
+- Else derive from the zone entity id (`…_control4_amp_bar_speakers` → `Bar Speakers`)
+- The config entry title is never prepended; leave **Name prefix** blank
 
 Then in **Music Assistant**:
 
@@ -119,6 +121,7 @@ Then in **Music Assistant**:
 
 ## Support
 
+- Repository: [github.com/heatvent/ha-amp-zone-player](https://github.com/heatvent/ha-amp-zone-player)
 - Issues: [github.com/heatvent/ha-amp-zone-player/issues](https://github.com/heatvent/ha-amp-zone-player/issues)
 - Amp / switch UDP control: [ha-c4-audio](https://github.com/heatvent/ha-c4-audio)
 
@@ -126,10 +129,12 @@ Then in **Music Assistant**:
 
 ## Developers — releasing
 
+HACS updates from **GitHub Releases** and the `"version"` field in `custom_components/amp_zone_player/manifest.json` — not from the README badge. Tag and manifest version must match (`v0.1.5` ↔ `"0.1.5"`).
+
 From a clean `main`:
 
 ```powershell
-.\tools\release.ps1 0.1.2 -Notes "Short summary for the release"
+.\tools\release.ps1 0.1.5 -Notes "Short summary for the release"
 ```
 
-Bumps `manifest.json`, updates the changelog, tags `vX.Y.Z`, and publishes the GitHub Release HACS reads. Tag and `manifest.json` `"version"` must match.
+Bumps `manifest.json`, updates the changelog, tags `vX.Y.Z`, and publishes the GitHub Release HACS reads. After a release, in HACS use **⋮ → Update information** (or reload HACS) if the update does not appear right away.
