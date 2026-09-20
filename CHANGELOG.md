@@ -4,6 +4,11 @@
 
 
 
+
+## 0.1.5 - 2026-09-20
+
+- GitHub link in README; short player names only (no Control4/device prefixes).
+
 ## 0.1.4 - 2026-09-20
 
 - Auto-shorten player names (area or strip Control4 Amp prefix); no manual rename needed.
@@ -20,6 +25,6 @@
 
 - Rename to Matrix Amplifier Zone Player; polished HACS README.
 
-## 0.1.0 ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â 2026-09-20
+## 0.1.0 ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€šÃ‚Â 2026-09-20
 
 - Initial scaffold: config flow, zone facades, decoder proxy for Music Assistant.
