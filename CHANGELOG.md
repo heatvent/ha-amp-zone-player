@@ -3,6 +3,11 @@
 
 
 
+
+## 0.3.1 - 2026-09-21
+
+- Add integration brand icon and logo for Home Assistant and HACS.
+
 ## 0.3.0 - 2026-09-20
 
 - Optional Queue/SyncGroup playback target so facades drive House/Theater groups (WiiM+Sonys) while amp zones only open the analog feed; README documents multi-group MA setup.
@@ -29,7 +34,7 @@
 
 ## 0.2.4 - 2026-09-20
 
-- Harden playback and grouping: safe service calls, stopÃƒÂ¢Ã¢â‚¬Â Ã¢â‚¬â„¢pause fallback, source select soft-fail, join skips failed zones.
+- Harden playback and grouping: safe service calls, stopÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢pause fallback, source select soft-fail, join skips failed zones.
 - Only advertise SEEK among decoder passthrough features (no browse/shuffle without handlers).
 - README behavior table matches code (Stop vs Unjoin); troubleshooting section added.
 - Prevent duplicate config entries for the same decoder+zones set.
