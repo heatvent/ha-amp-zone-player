@@ -108,23 +108,46 @@ Copy `custom_components/amp_zone_player` into `config/custom_components/`, resta
 
 ## Setup
 
-1. **Decoder** — WiiM (or Cast / DLNA / similar streamer)
+1. **Decoder** — WiiM (analog out → amp input 1)
 2. **Zones** — Control4 Audio **speaker** zones only (Bar Speakers, Kitchen Speakers, …). The bare Control4 Amp / Switch player is hidden.
-3. **Amp input / source** — plain-text name from the zone source list (e.g. `WiiM Pro`), or None
-4. **Name prefix** — leave blank
-5. **Hub name** — optional (blank → `Amp zones`); does not prefix player names
+3. **Queue / SyncGroup player (optional)** — your Music Assistant **House** group (see below). Play/pause goes there so Sonys stay in sync; zones only open the WiiM analog feed.
+4. **Amp input / source** — plain-text name from the zone source list (e.g. `WiiM Pro`), or None
+5. **Name prefix** — leave blank
+6. **Hub name** — optional (blank → `Amp zones`); does not prefix player names
 
 Facade names look like `Bar Speakers`; entity ids like `media_player.bar_speakers` when free.
 
-### Music Assistant
+### Music Assistant — amp rooms only
 
 1. Player providers → **Home Assistant Media Players** → enable the facades only  
 2. Hide/uncheck the raw WiiM and the raw Control4 zone entities  
 3. Select a room → play → use **group / members** to add other facades  
-4. Never use **Add group player** / SyncGroup for these  
+4. Do **not** put amp facades in a SyncGroup with each other (analog feed, not digital sync)  
 5. If audio cuts out mid-stream, try changing the facade’s **HTTP Profile** in MA player settings
 
-HA join example:
+### Music Assistant — House (WiiM + Sony receivers)
+
+Use this when theater/basement Sonys should play with the WiiM (and amp ceilings via analog).
+
+1. In MA: **Settings → Players → Add group player**  
+2. Choose a **native Sync Group** (perfect sync), not Universal Group  
+3. Name it **House**  
+4. Members: **WiiM** + both **STR-AZ1000ES** players (Cast / AirPlay / Sendspin — whichever groups cleanly)  
+5. Save. Optionally enable **dynamic members** if you sometimes drop a Sony  
+6. On each Sony player: **Stereo / Direct** (or Pure Direct) for music; tune **Static playback delay** if a room echoes  
+7. Expose **House** to Home Assistant (Music Assistant integration → that player enabled)  
+8. Amp Zone Player → **Configure** → set **Queue / SyncGroup player** to `media_player.house` (or whatever entity id House got)  
+9. In MA player list: use **House** and/or the **facades**; hide raw WiiM if you like  
+
+**Day-to-day**
+
+| Goal | Do this |
+|---|---|
+| Amp rooms only | Play to a facade; join other facades. Leave House/Sonys off. |
+| Sonys + optional amp | Play to **House**. Turn on / join the facades you want (source = WiiM). |
+| New track from a facade with House configured | Play on the facade — queue goes to **House** (Sonys stay in the group). |
+
+HA join example (amp zones only):
 
 ```yaml
 action: media_player.join
@@ -142,19 +165,19 @@ data:
 
 | Action | Result |
 |---|---|
-| **Play / play_media** | Facade becomes leader; zone on; URL/stream on decoder (WiiM woke first) |
+| **Play / play_media** | Facade becomes leader; zone on; queue on **playback** target (House SyncGroup if set, else WiiM) |
 | **Join** | Member zones on; listed in `group_members` (adds merge — does not replace) |
-| **Unjoin / Off** | That zone off; leaves session; decoder keeps playing if others remain |
-| **Stop** | Stops (or pauses) the **decoder** — silence in all joined rooms |
+| **Unjoin / Off** | That zone off; leaves session; queue keeps playing if others remain |
+| **Stop** | Stops (or pauses) the **playback** target — silence for that queue (and Sonys if House) |
 | **Volume / Mute** | That zone only |
-| **Pause / Next / Seek** | Decoder (shared) |
+| **Pause / Next / Seek** | Playback target (shared) |
 
 ---
 
 ## Limits
 
-- **One queue** — all joined rooms share the decoder stream  
-- **Not digital sync** — rooms share an analog feed; SyncGroup is the wrong tool  
+- **One queue** — all joined amp rooms share the WiiM analog feed  
+- **Amp facades are not digital sync members** — put **WiiM + Sonys** in a SyncGroup; facades only open amp zones  
 - **Amp integration required** — this only proxies HA entities  
 - **Amp source name must match** — if set, it must match the zone `source_list` exactly or you get silence while the WiiM plays  
 
@@ -164,10 +187,11 @@ data:
 
 | Symptom | Check |
 |---|---|
-| No music | Decoder entity can play a URL in HA; facade logs `play_media → decoder …`; amp source spelling |
+| No music | Decoder / House can play a URL in HA; facade logs `play_media → …`; amp source spelling |
 | Third room replaces second | Update to **0.2.2+** (join merges members) |
 | Group works, still silence | WiiM playing in HA? Amp input selected? Zone volume > 0? |
 | Mid-stream dropouts | MA player setting **HTTP Profile** (try each option) |
+| Echo vs Sonys | SyncGroup members only; Stereo/Direct on AVR; Static playback delay on the late room |
 
 ---
 

@@ -7,10 +7,12 @@
         "data": {
           "decoder": "Decoder (real streamer)",
           "zones": "Amp zone media players",
+          "playback": "Queue / SyncGroup player (optional)",
           "name_prefix": "Name prefix for facade players (optional — leave blank)",
           "name": "Hub name (optional — blank becomes Amp zones; does not prefix players)"
         },
         "data_description": {
+          "playback": "Optional Music Assistant House SyncGroup (or similar). Play/pause goes there so Sonys stay in sync; amp zones only open the analog feed from the WiiM.",
           "name": "Shown only as the integration entry / device label. Player names stay short (e.g. Bar Speakers)."
         }
       },
@@ -30,7 +32,8 @@
       "no_zones": "Select at least one zone",
       "decoder_in_zones": "Decoder cannot also be listed as a zone",
       "bad_zone": "Pick Control4 Audio speaker zones only (not the bare Control4 Amp / Switch player)",
-      "bad_decoder": "Pick a real streamer (WiiM, Cast, DLNA, etc.) — not an amp zone"
+      "bad_decoder": "Pick a real streamer (WiiM, Cast, DLNA, etc.) — not an amp zone",
+      "playback_in_zones": "Queue player cannot also be listed as an amp zone"
     },
     "abort": {
       "already_configured": "This Music Assistant Amp Zone Player entry is already configured"
@@ -44,7 +47,11 @@
         "data": {
           "decoder": "Decoder (real streamer)",
           "zones": "Amp zone media players",
+          "playback": "Queue / SyncGroup player (optional)",
           "name_prefix": "Name prefix for facade players (optional)"
+        },
+        "data_description": {
+          "playback": "Optional Music Assistant House SyncGroup. Leave empty to send play directly to the WiiM."
         }
       },
       "source": {
@@ -64,7 +71,8 @@
       "decoder_in_zones": "Decoder cannot also be listed as a zone",
       "bad_zone": "Pick Control4 Audio speaker zones only (not the bare Control4 Amp / Switch player)",
       "bad_decoder": "Pick a real streamer (WiiM, Cast, DLNA, etc.) — not an amp zone",
-      "already_configured": "Another entry already uses this decoder and zone set"
+      "already_configured": "Another entry already uses this decoder and zone set",
+      "playback_in_zones": "Queue player cannot also be listed as an amp zone"
     }
   }
 }

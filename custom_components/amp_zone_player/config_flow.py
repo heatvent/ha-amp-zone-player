@@ -16,6 +16,7 @@ from homeassistant.helpers import selector
 from .const import (
     CONF_DECODER,
     CONF_NAME_PREFIX,
+    CONF_PLAYBACK,
     CONF_SOURCE,
     CONF_ZONES,
     DEFAULT_NAME_PREFIX,
@@ -61,6 +62,11 @@ def _normalize_source(value: str | None) -> str:
     if not raw or raw == SOURCE_NONE:
         return ""
     return raw
+
+
+def _normalize_playback(value: str | None) -> str:
+    """Optional queue owner (e.g. MA House SyncGroup); blank = use decoder."""
+    return (value or "").strip()
 
 
 def _source_form_value(stored: str | None) -> str:
@@ -174,6 +180,7 @@ async def _async_validate(
     errors: dict[str, str] = {}
     decoder = data[CONF_DECODER]
     zones = _normalize_zones(data[CONF_ZONES])
+    playback = _normalize_playback(data.get(CONF_PLAYBACK))
 
     if hass.states.get(decoder) is None:
         errors[CONF_DECODER] = "entity_not_found"
@@ -195,6 +202,12 @@ async def _async_validate(
         ):
             errors[CONF_ZONES] = "bad_zone"
 
+    if playback:
+        if hass.states.get(playback) is None:
+            errors[CONF_PLAYBACK] = "entity_not_found"
+        elif playback in zones:
+            errors[CONF_PLAYBACK] = "playback_in_zones"
+
     return errors
 
 
@@ -209,6 +222,9 @@ def _user_schema(hass: HomeAssistant) -> vol.Schema:
                 integrations=_ZONE_INTEGRATIONS,
                 include_entities=_amp_speaker_zone_ids(hass),
             ),
+            vol.Optional(CONF_PLAYBACK): selector.EntitySelector(
+                selector.EntitySelectorConfig(domain=MP_DOMAIN, multiple=False)
+            ),
             vol.Optional(
                 CONF_NAME_PREFIX, default=DEFAULT_NAME_PREFIX
             ): selector.TextSelector(),
@@ -218,25 +234,35 @@ def _user_schema(hass: HomeAssistant) -> vol.Schema:
 
 
 def _options_schema(hass: HomeAssistant, data: dict[str, Any]) -> vol.Schema:
-    return vol.Schema(
-        {
-            vol.Required(
-                CONF_DECODER, default=data.get(CONF_DECODER)
-            ): _media_player_selector(
-                multiple=False, integrations=_DECODER_INTEGRATIONS
-            ),
-            vol.Required(
-                CONF_ZONES, default=data.get(CONF_ZONES, [])
-            ): _media_player_selector(
-                multiple=True,
-                integrations=_ZONE_INTEGRATIONS,
-                include_entities=_amp_speaker_zone_ids(hass),
-            ),
-            vol.Optional(
-                CONF_NAME_PREFIX, default=data.get(CONF_NAME_PREFIX, "")
-            ): selector.TextSelector(),
-        }
-    )
+    playback_default = _normalize_playback(data.get(CONF_PLAYBACK))
+    schema: dict[Any, Any] = {
+        vol.Required(
+            CONF_DECODER, default=data.get(CONF_DECODER)
+        ): _media_player_selector(
+            multiple=False, integrations=_DECODER_INTEGRATIONS
+        ),
+        vol.Required(
+            CONF_ZONES, default=data.get(CONF_ZONES, [])
+        ): _media_player_selector(
+            multiple=True,
+            integrations=_ZONE_INTEGRATIONS,
+            include_entities=_amp_speaker_zone_ids(hass),
+        ),
+        vol.Optional(
+            CONF_NAME_PREFIX, default=data.get(CONF_NAME_PREFIX, "")
+        ): selector.TextSelector(),
+    }
+    if playback_default:
+        schema[
+            vol.Optional(CONF_PLAYBACK, default=playback_default)
+        ] = selector.EntitySelector(
+            selector.EntitySelectorConfig(domain=MP_DOMAIN, multiple=False)
+        )
+    else:
+        schema[vol.Optional(CONF_PLAYBACK)] = selector.EntitySelector(
+            selector.EntitySelectorConfig(domain=MP_DOMAIN, multiple=False)
+        )
+    return vol.Schema(schema)
 
 
 class AmpZonePlayerConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
@@ -268,6 +294,7 @@ class AmpZonePlayerConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                         user_input.get(CONF_NAME_PREFIX) or DEFAULT_NAME_PREFIX
                     ).strip(),
                     CONF_NAME: _entry_title(user_input.get(CONF_NAME)),
+                    CONF_PLAYBACK: _normalize_playback(user_input.get(CONF_PLAYBACK)),
                 }
                 return await self.async_step_source()
 
@@ -293,6 +320,7 @@ class AmpZonePlayerConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                     CONF_ZONES: zones,
                     CONF_SOURCE: source,
                     CONF_NAME_PREFIX: self._partial[CONF_NAME_PREFIX],
+                    CONF_PLAYBACK: self._partial.get(CONF_PLAYBACK, ""),
                 },
             )
 
@@ -350,6 +378,9 @@ class AmpZonePlayerOptionsFlow(config_entries.OptionsFlow):
                             user_input.get(CONF_NAME_PREFIX) or DEFAULT_NAME_PREFIX
                         ).strip(),
                         CONF_SOURCE: data.get(CONF_SOURCE, ""),
+                        CONF_PLAYBACK: _normalize_playback(
+                            user_input.get(CONF_PLAYBACK)
+                        ),
                         "unique_id": new_uid,
                     }
                     return await self.async_step_source()
@@ -373,6 +404,7 @@ class AmpZonePlayerOptionsFlow(config_entries.OptionsFlow):
                 CONF_ZONES: zones,
                 CONF_SOURCE: _normalize_source(user_input.get(CONF_SOURCE)),
                 CONF_NAME_PREFIX: self._partial[CONF_NAME_PREFIX],
+                CONF_PLAYBACK: self._partial.get(CONF_PLAYBACK, ""),
             }
             # Keep config in entry.data (not options) and refresh unique_id.
             self.hass.config_entries.async_update_entry(
