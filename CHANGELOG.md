@@ -2,6 +2,11 @@
 
 
 
+
+## 0.3.0 - 2026-09-20
+
+- Optional Queue/SyncGroup playback target so facades drive House/Theater groups (WiiM+Sonys) while amp zones only open the analog feed; README documents multi-group MA setup.
+
 ## 0.2.9 - 2026-09-20
 
 - Polish: source None sentinel, options unique_id refresh, soft-fail rename, typed DeviceInfo; README matches speaker-zone picker.
@@ -24,7 +29,7 @@
 
 ## 0.2.4 - 2026-09-20
 
-- Harden playback and grouping: safe service calls, stopÃ¢â€ â€™pause fallback, source select soft-fail, join skips failed zones.
+- Harden playback and grouping: safe service calls, stopÃƒÂ¢Ã¢â‚¬Â Ã¢â‚¬â„¢pause fallback, source select soft-fail, join skips failed zones.
 - Only advertise SEEK among decoder passthrough features (no browse/shuffle without handlers).
 - README behavior table matches code (Stop vs Unjoin); troubleshooting section added.
 - Prevent duplicate config entries for the same decoder+zones set.
