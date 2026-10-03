@@ -64,7 +64,8 @@ _STATE_MAP = {
     STATE_PLAYING: MediaPlayerState.PLAYING,
     STATE_PAUSED: MediaPlayerState.PAUSED,
     STATE_IDLE: MediaPlayerState.IDLE,
-    STATE_STANDBY: MediaPlayerState.STANDBY,
+    # MediaPlayerState.STANDBY removed in HA 2026.8 — treat as idle when zone is on.
+    STATE_STANDBY: MediaPlayerState.IDLE,
 }
 
 # Only advertise transport bits we actually implement as passthrough.
