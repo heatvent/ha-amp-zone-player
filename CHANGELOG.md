@@ -4,6 +4,11 @@
 
 
 
+
+## 1.0.0 - 2026-10-03
+
+- First stable release. Map decoder standby to IDLE (MediaPlayerState.STANDBY removed in HA 2026.8).
+
 ## 0.3.1 - 2026-09-21
 
 - Add integration brand icon and logo for Home Assistant and HACS.
@@ -34,7 +39,7 @@
 
 ## 0.2.4 - 2026-09-20
 
-- Harden playback and grouping: safe service calls, stopÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢pause fallback, source select soft-fail, join skips failed zones.
+- Harden playback and grouping: safe service calls, stopÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€šÃ‚Â ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â‚¬Å¾Ã‚Â¢pause fallback, source select soft-fail, join skips failed zones.
 - Only advertise SEEK among decoder passthrough features (no browse/shuffle without handlers).
 - README behavior table matches code (Stop vs Unjoin); troubleshooting section added.
 - Prevent duplicate config entries for the same decoder+zones set.
