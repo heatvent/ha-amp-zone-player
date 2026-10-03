@@ -201,6 +201,10 @@ data:
 - Issues: [github.com/heatvent/ha-amp-zone-player/issues](https://github.com/heatvent/ha-amp-zone-player/issues)
 - Amp / switch UDP: [ha-c4-audio](https://github.com/heatvent/ha-c4-audio)
 
+## Credits
+
+Developed with [Cursor](https://cursor.com).
+
 ---
 
 ## Developers — releasing
