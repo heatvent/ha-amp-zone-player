@@ -13,7 +13,8 @@
         },
         "data_description": {
           "playback": "Optional Music Assistant House SyncGroup (or similar). Play/pause goes there so Sonys stay in sync; amp zones only open the analog feed from the WiiM.",
-          "name": "Shown only as the integration entry / device label. Player names stay short (e.g. Bar Speakers)."
+          "name": "Shown only as the integration entry / device label. Player names stay short (e.g. Bar Speakers).",
+          "zones": "Control4 Audio speaker zones, or zones from Monoprice, Russound, Yamaha, Onkyo, Denon, etc."
         }
       },
       "source": {
@@ -31,7 +32,7 @@
       "entity_not_found": "One or more entities were not found",
       "no_zones": "Select at least one zone",
       "decoder_in_zones": "Decoder cannot also be listed as a zone",
-      "bad_zone": "Pick Control4 Audio speaker zones only (not the bare Control4 Amp / Switch player)",
+      "bad_zone": "Pick amp/matrix zone media players only (e.g. Control4 Audio speaker zones — not the bare Amp/Switch player)",
       "bad_decoder": "Pick a real streamer (WiiM, Cast, DLNA, etc.) — not an amp zone",
       "playback_in_zones": "Queue player cannot also be listed as an amp zone"
     },
@@ -51,7 +52,8 @@
           "name_prefix": "Name prefix for facade players (optional)"
         },
         "data_description": {
-          "playback": "Optional Music Assistant House SyncGroup. Leave empty to send play directly to the WiiM."
+          "playback": "Optional Music Assistant House SyncGroup. Leave empty to send play directly to the WiiM.",
+          "zones": "Control4 Audio speaker zones, or zones from Monoprice, Russound, Yamaha, Onkyo, Denon, etc."
         }
       },
       "source": {
@@ -69,10 +71,44 @@
       "entity_not_found": "One or more entities were not found",
       "no_zones": "Select at least one zone",
       "decoder_in_zones": "Decoder cannot also be listed as a zone",
-      "bad_zone": "Pick Control4 Audio speaker zones only (not the bare Control4 Amp / Switch player)",
+      "bad_zone": "Pick amp/matrix zone media players only (e.g. Control4 Audio speaker zones — not the bare Amp/Switch player)",
       "bad_decoder": "Pick a real streamer (WiiM, Cast, DLNA, etc.) — not an amp zone",
       "already_configured": "Another entry already uses this decoder and zone set",
       "playback_in_zones": "Queue player cannot also be listed as an amp zone"
+    }
+  },
+  "issues": {
+    "bad_source": {
+      "title": "Amp source “{source}” not on zone source list",
+      "description": "The entry **{title}** selects amp source `{source}`, but that name is not in any configured zone’s `source_list`. Zones may turn on with no audio from the decoder.\n\nFix by clearing the source (Repair) or reconfigure the entry and pick a name that matches the zone Source dropdown exactly."
+    }
+  },
+  "repairs": {
+    "confirm": {
+      "title": "Clear invalid amp source",
+      "description": "Clear source `{source}` from this entry? Zones will keep their current input when turned on (you can set a new source later in Configure)."
+    }
+  },
+  "services": {
+    "turn_all_zones_on": {
+      "name": "Turn all zones on",
+      "description": "Power on every amp zone facade for this entry.",
+      "fields": {
+        "config_entry_id": {
+          "name": "Config entry",
+          "description": "The Amp Zone Player hub / config entry"
+        }
+      }
+    },
+    "turn_all_zones_off": {
+      "name": "Turn all zones off",
+      "description": "Power off every amp zone facade for this entry without stopping the decoder.",
+      "fields": {
+        "config_entry_id": {
+          "name": "Config entry",
+          "description": "The Amp Zone Player hub / config entry"
+        }
+      }
     }
   }
 }

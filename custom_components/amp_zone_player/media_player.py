@@ -31,8 +31,6 @@ from homeassistant.const import (
     STATE_ON,
     STATE_PLAYING,
     STATE_PAUSED,
-    STATE_IDLE,
-    STATE_STANDBY,
     STATE_UNAVAILABLE,
     STATE_UNKNOWN,
 )
@@ -51,6 +49,7 @@ from .const import (
     CONF_ZONES,
     DOMAIN,
 )
+from .helpers import STATE_MAP as _STATE_VALUE_MAP
 from .naming import facade_name, facade_object_id
 from .session import AmpSession
 
@@ -58,15 +57,20 @@ _LOGGER = logging.getLogger(__name__)
 
 DEVICE_NAME_FALLBACK = "Amp zones"
 
-_STATE_MAP = {
-    STATE_OFF: MediaPlayerState.OFF,
-    STATE_ON: MediaPlayerState.ON,
-    STATE_PLAYING: MediaPlayerState.PLAYING,
-    STATE_PAUSED: MediaPlayerState.PAUSED,
-    STATE_IDLE: MediaPlayerState.IDLE,
-    # MediaPlayerState.STANDBY removed in HA 2026.8 — treat as idle when zone is on.
-    STATE_STANDBY: MediaPlayerState.IDLE,
+_STATE_ENUM = {
+    "off": MediaPlayerState.OFF,
+    "on": MediaPlayerState.ON,
+    "playing": MediaPlayerState.PLAYING,
+    "paused": MediaPlayerState.PAUSED,
+    "idle": MediaPlayerState.IDLE,
 }
+
+
+def _map_state(raw: str | None) -> MediaPlayerState | None:
+    mapped = _STATE_VALUE_MAP.get(raw) if raw else None
+    if mapped is None:
+        return None
+    return _STATE_ENUM.get(mapped)
 
 # Only advertise transport bits we actually implement as passthrough.
 _PASSTHROUGH_FEATURES = MediaPlayerEntityFeature.SEEK
@@ -337,13 +341,13 @@ class AmpZoneFacade(MediaPlayerEntity):
             return MediaPlayerState.OFF
         playback = self._playback()
         if playback is not None and playback.state != STATE_UNAVAILABLE:
-            mapped = _STATE_MAP.get(playback.state)
+            mapped = _map_state(playback.state)
             if mapped is not None:
                 return mapped
         decoder = self._decoder()
         if decoder is None:
             return MediaPlayerState.ON
-        return _STATE_MAP.get(decoder.state, MediaPlayerState.ON)
+        return _map_state(decoder.state) or MediaPlayerState.ON
 
     @property
     def supported_features(self) -> MediaPlayerEntityFeature:

@@ -1,0 +1,23 @@
+turn_all_zones_on:
+  name: Turn all zones on
+  description: Power on every amp zone facade for this Music Assistant Amp Zone Player entry (and select the configured source when set).
+  fields:
+    config_entry_id:
+      name: Config entry
+      description: The Amp Zone Player hub / config entry
+      required: true
+      selector:
+        config_entry:
+          integration: amp_zone_player
+
+turn_all_zones_off:
+  name: Turn all zones off
+  description: Power off every amp zone facade for this Music Assistant Amp Zone Player entry (leaves the decoder / SyncGroup queue alone).
+  fields:
+    config_entry_id:
+      name: Config entry
+      description: The Amp Zone Player hub / config entry
+      required: true
+      selector:
+        config_entry:
+          integration: amp_zone_player

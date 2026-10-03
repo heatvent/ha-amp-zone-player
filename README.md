@@ -2,7 +2,7 @@
 
 [![hacs_badge](https://img.shields.io/badge/HACS-Custom-41BDF5.svg)](https://github.com/hacs/integration)
 [![GitHub release](https://img.shields.io/github/v/release/heatvent/ha-amp-zone-player)](https://github.com/heatvent/ha-amp-zone-player/releases)
-[![HA](https://img.shields.io/badge/Home%20Assistant-2024.12%2B-blue.svg)](https://www.home-assistant.io/)
+[![HA](https://img.shields.io/badge/Home%20Assistant-2025.12%2B-blue.svg)](https://www.home-assistant.io/)
 
 **GitHub:** [github.com/heatvent/ha-amp-zone-player](https://github.com/heatvent/ha-amp-zone-player)
 
@@ -109,7 +109,7 @@ Copy `custom_components/amp_zone_player` into `config/custom_components/`, resta
 ## Setup
 
 1. **Decoder** — WiiM (analog out → amp input 1)
-2. **Zones** — Control4 Audio **speaker** zones only (Bar Speakers, Kitchen Speakers, …). The bare Control4 Amp / Switch player is hidden.
+2. **Zones** — amp/matrix zone players: Control4 Audio **speaker** zones, or zones from Monoprice, Russound, Yamaha, Onkyo, Denon, etc. Bare Control4 Amp / Switch players stay hidden.
 3. **Queue / SyncGroup player (optional)** — your Music Assistant **House** group (see below). Play/pause goes there so Sonys stay in sync; zones only open the WiiM analog feed.
 4. **Amp input / source** — plain-text name from the zone source list (e.g. `WiiM Pro`), or None
 5. **Name prefix** — leave blank
@@ -195,6 +195,20 @@ data:
 
 ---
 
+## Services
+
+| Service | Effect |
+|---|---|
+| `amp_zone_player.turn_all_zones_on` | Power on every facade for a config entry (selects configured source when set) |
+| `amp_zone_player.turn_all_zones_off` | Power off every facade; decoder / SyncGroup queue keeps playing |
+
+Both take `config_entry_id` (pick the Amp Zone Player hub in the UI).
+
+## Diagnostics & repairs
+
+- Download **Download diagnostics** from the integration entry for decoder, zones, source lists, and session membership.
+- If the configured amp source is missing from every zone `source_list`, a **Repair** offers to clear it.
+
 ## Support
 
 - Repository: [github.com/heatvent/ha-amp-zone-player](https://github.com/heatvent/ha-amp-zone-player)
@@ -204,6 +218,10 @@ data:
 ## Credits
 
 Developed with [Cursor](https://cursor.com).
+
+## License
+
+[MIT](LICENSE)
 
 ---
 

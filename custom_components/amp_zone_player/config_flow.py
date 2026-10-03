@@ -22,13 +22,34 @@ from .const import (
     DEFAULT_NAME_PREFIX,
     DOMAIN,
 )
+from .helpers import (
+    SOURCE_NONE,
+    entry_unique_id as _entry_unique_id,
+    normalize_playback as _normalize_playback,
+    normalize_source as _normalize_source,
+    normalize_zones as _normalize_zones,
+    source_form_value as _source_form_value,
+)
 
-SOURCE_NONE = "__none__"
 SOURCE_NONE_LABEL = "None — leave zone source as-is"
 DEFAULT_ENTRY_TITLE = "Amp zones"
 
-# Amp zones come from Control4 Audio (one media_player per speaker zone).
-_ZONE_INTEGRATIONS = frozenset({"c4_audio"})
+# Matrix / multi-zone amp platforms (room power + volume, not streamers).
+_ZONE_INTEGRATIONS = frozenset(
+    {
+        "c4_audio",
+        "monoprice",
+        "russound",
+        "russound_rio",
+        "yamaha",
+        "yamaha_ynca",
+        "onkyo",
+        "denonavr",
+        "anthemav",
+        "sosoyo",
+        "trinnov",
+    }
+)
 
 # Real streamers / decoders — not amp zones, MA facades, or Alexa.
 _DECODER_INTEGRATIONS = frozenset(
@@ -50,37 +71,8 @@ def _entry_title(value: str | None) -> str:
     return (value or "").strip() or DEFAULT_ENTRY_TITLE
 
 
-def _normalize_zones(zones: str | list[str]) -> list[str]:
-    if isinstance(zones, str):
-        return [zones]
-    return list(zones)
-
-
-def _normalize_source(value: str | None) -> str:
-    """Stored source name; blank means leave zone source as-is."""
-    raw = (value or "").strip()
-    if not raw or raw == SOURCE_NONE:
-        return ""
-    return raw
-
-
-def _normalize_playback(value: str | None) -> str:
-    """Optional queue owner (e.g. MA House SyncGroup); blank = use decoder."""
-    return (value or "").strip()
-
-
-def _source_form_value(stored: str | None) -> str:
-    """Select option value for a previously saved source."""
-    raw = (stored or "").strip()
-    return raw if raw else SOURCE_NONE
-
-
-def _entry_unique_id(decoder: str, zones: list[str]) -> str:
-    return f"{decoder}|{'|'.join(sorted(zones))}"
-
-
 def _is_amp_speaker_zone(entry: er.RegistryEntry) -> bool:
-    """True for room speaker zones; false for bare amp/switch media_players."""
+    """True for room amp zones; false for bare switch / chassis media_players."""
     if entry.domain != MP_DOMAIN or entry.platform not in _ZONE_INTEGRATIONS:
         return False
     if entry.disabled_by is not None:
@@ -90,7 +82,14 @@ def _is_amp_speaker_zone(entry: er.RegistryEntry) -> bool:
     if object_id.startswith("control4_switch_"):
         return False
     label = (entry.name or entry.original_name or object_id).lower()
-    return "speaker" in label
+    # Control4 Audio exposes one player per speaker zone — require "speaker".
+    if entry.platform == "c4_audio":
+        return "speaker" in label
+    # Other matrix integrations: skip obvious chassis / main-unit labels.
+    for skip in ("chassis", "controller", "main zone", "main_zone", "amplifier"):
+        if skip in label and "zone" not in label and "speaker" not in label:
+            return False
+    return True
 
 
 def _amp_speaker_zone_ids(hass: HomeAssistant) -> list[str]:
