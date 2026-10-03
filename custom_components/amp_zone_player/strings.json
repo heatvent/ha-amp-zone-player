@@ -80,13 +80,14 @@
   "issues": {
     "bad_source": {
       "title": "Amp source “{source}” not on zone source list",
-      "description": "The entry **{title}** selects amp source `{source}`, but that name is not in any configured zone’s `source_list`. Zones may turn on with no audio from the decoder.\n\nFix by clearing the source (Repair) or reconfigure the entry and pick a name that matches the zone Source dropdown exactly."
-    }
-  },
-  "repairs": {
-    "confirm": {
-      "title": "Clear invalid amp source",
-      "description": "Clear source `{source}` from this entry? Zones will keep their current input when turned on (you can set a new source later in Configure)."
+      "fix_flow": {
+        "step": {
+          "confirm": {
+            "title": "Clear invalid amp source",
+            "description": "The entry **{title}** selects amp source `{source}`, but that name is not in any configured zone’s `source_list`.\n\nClear the source? Zones will keep their current input when turned on (you can set a new source later in Configure)."
+          }
+        }
+      }
     }
   },
   "services": {
