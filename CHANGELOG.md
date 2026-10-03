@@ -5,6 +5,11 @@
 
 
 
+
+## 1.0.1 - 2026-10-03
+
+- Add HACS and hassfest CI, MIT license, and Cursor credit. Prepare for default HACS store submission.
+
 ## 1.0.0 - 2026-10-03
 
 - First stable release. Map decoder standby to IDLE (MediaPlayerState.STANDBY removed in HA 2026.8).
@@ -39,7 +44,7 @@
 
 ## 0.2.4 - 2026-09-20
 
-- Harden playback and grouping: safe service calls, stopÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€šÃ‚Â ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â‚¬Å¾Ã‚Â¢pause fallback, source select soft-fail, join skips failed zones.
+- Harden playback and grouping: safe service calls, stopÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¾Ãƒâ€šÃ‚Â¢pause fallback, source select soft-fail, join skips failed zones.
 - Only advertise SEEK among decoder passthrough features (no browse/shuffle without handlers).
 - README behavior table matches code (Stop vs Unjoin); troubleshooting section added.
 - Prevent duplicate config entries for the same decoder+zones set.
