@@ -12,6 +12,7 @@ from helpers import (  # noqa: E402
     entry_unique_id,
     map_player_state,
     normalize_playback,
+    normalize_sound_mode,
     normalize_source,
     normalize_zones,
     source_form_value,
@@ -24,6 +25,8 @@ def test_normalize_zones():
         "media_player.a",
         "media_player.b",
     ]
+    assert normalize_zones(None) == []
+    assert normalize_zones("") == []
 
 
 def test_normalize_source():
@@ -38,6 +41,11 @@ def test_normalize_playback():
     assert normalize_playback("  media_player.house  ") == "media_player.house"
 
 
+def test_normalize_sound_mode():
+    assert normalize_sound_mode(None) == ""
+    assert normalize_sound_mode("  Multi Stereo  ") == "Multi Stereo"
+
+
 def test_source_form_value():
     assert source_form_value("") == SOURCE_NONE
     assert source_form_value(None) == SOURCE_NONE
@@ -48,6 +56,14 @@ def test_entry_unique_id():
     assert (
         entry_unique_id("media_player.wiim", ["media_player.b", "media_player.a"])
         == "media_player.wiim|media_player.a|media_player.b"
+    )
+    assert (
+        entry_unique_id(
+            "media_player.wiim",
+            ["media_player.a"],
+            ["media_player.sony"],
+        )
+        == "media_player.wiim|media_player.a|d:media_player.sony"
     )
 
 

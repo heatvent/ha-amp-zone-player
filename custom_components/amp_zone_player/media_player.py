@@ -43,13 +43,17 @@ from homeassistant.helpers.event import async_track_state_change_event
 
 from .const import (
     CONF_DECODER,
+    CONF_DIGITAL_SOUND_MODE,
+    CONF_DIGITAL_ZONES,
     CONF_NAME_PREFIX,
     CONF_PLAYBACK,
     CONF_SOURCE,
     CONF_ZONES,
     DOMAIN,
+    ZONE_KIND_AMP,
+    ZONE_KIND_DIGITAL,
 )
-from .helpers import STATE_MAP as _STATE_VALUE_MAP
+from .helpers import STATE_MAP as _STATE_VALUE_MAP, normalize_zones
 from .naming import facade_name, facade_object_id
 from .session import AmpSession
 
@@ -95,19 +99,22 @@ def _short_media_id(media_id: str, limit: int = 80) -> str:
 async def async_setup_entry(
     hass: HomeAssistant, entry: ConfigEntry, async_add_entities: AddEntitiesCallback
 ) -> None:
-    """Set up one facade per configured zone."""
+    """Set up one facade per configured amp and digital zone."""
     config = _merged_config(entry)
     decoder = config[CONF_DECODER]
-    zones: list[str] = list(config.get(CONF_ZONES) or [])
+    zones: list[str] = normalize_zones(config.get(CONF_ZONES))
+    digital_zones: list[str] = normalize_zones(config.get(CONF_DIGITAL_ZONES))
     source = (config.get(CONF_SOURCE) or "").strip() or None
     prefix = (config.get(CONF_NAME_PREFIX) or "").strip()
+    sound_mode = (config.get(CONF_DIGITAL_SOUND_MODE) or "").strip() or None
     playback = (config.get(CONF_PLAYBACK) or "").strip() or None
     if playback == decoder:
         playback = None
 
-    if not zones:
+    if not zones and not digital_zones:
         _LOGGER.error(
-            "No zones configured for %s — reconfigure and select amp zone media players",
+            "No zones configured for %s — reconfigure and select amp and/or "
+            "digital (receiver) media players",
             entry.title,
         )
         return
@@ -121,27 +128,44 @@ async def async_setup_entry(
     hass.data[DOMAIN][entry.entry_id] = session
 
     _LOGGER.info(
-        "Creating %s zone facade(s) (decoder=%s playback=%s)",
+        "Creating %s amp + %s digital facade(s) (decoder=%s playback=%s)",
         len(zones),
+        len(digital_zones),
         decoder,
         playback or decoder,
     )
 
-    async_add_entities(
-        [
-            AmpZoneFacade(
-                hass=hass,
-                entry=entry,
-                session=session,
-                zone_entity_id=zone_id,
-                decoder_entity_id=decoder,
-                playback_entity_id=playback,
-                source_name=source,
-                name_prefix=prefix,
-            )
-            for zone_id in zones
-        ]
+    entities: list[AmpZoneFacade] = [
+        AmpZoneFacade(
+            hass=hass,
+            entry=entry,
+            session=session,
+            zone_entity_id=zone_id,
+            decoder_entity_id=decoder,
+            playback_entity_id=playback,
+            source_name=source,
+            name_prefix=prefix,
+            zone_kind=ZONE_KIND_AMP,
+            digital_sound_mode=None,
+        )
+        for zone_id in zones
+    ]
+    entities.extend(
+        AmpZoneFacade(
+            hass=hass,
+            entry=entry,
+            session=session,
+            zone_entity_id=zone_id,
+            decoder_entity_id=decoder,
+            playback_entity_id=playback,
+            source_name=None,
+            name_prefix=prefix,
+            zone_kind=ZONE_KIND_DIGITAL,
+            digital_sound_mode=sound_mode,
+        )
+        for zone_id in digital_zones
     )
+    async_add_entities(entities)
 
 
 class AmpZoneFacade(MediaPlayerEntity):
@@ -149,7 +173,8 @@ class AmpZoneFacade(MediaPlayerEntity):
     Zone facade for Music Assistant / HA.
 
     Transport goes to the playback target (MA House SyncGroup when set, else the
-    WiiM decoder). Amp zones only join/unjoin power + volume on the analog feed.
+    WiiM decoder). Amp zones join/unjoin power + volume on the analog feed.
+    Digital zones (receivers) join/unjoin the decoder SyncGroup in the background.
     """
 
     _attr_has_entity_name = False
@@ -165,6 +190,8 @@ class AmpZoneFacade(MediaPlayerEntity):
         playback_entity_id: str | None,
         source_name: str | None,
         name_prefix: str,
+        zone_kind: str = ZONE_KIND_AMP,
+        digital_sound_mode: str | None = None,
     ) -> None:
         self.hass = hass
         self._entry = entry
@@ -174,7 +201,13 @@ class AmpZoneFacade(MediaPlayerEntity):
         self._playback_id = playback_entity_id or decoder_entity_id
         self._source_name = source_name
         self._name_prefix = name_prefix
-        self._attr_unique_id = f"{entry.entry_id}_{zone_entity_id}"
+        self._zone_kind = zone_kind
+        self._digital_sound_mode = digital_sound_mode
+        self._attr_unique_id = (
+            f"{entry.entry_id}_digital_{zone_entity_id}"
+            if zone_kind == ZONE_KIND_DIGITAL
+            else f"{entry.entry_id}_{zone_entity_id}"
+        )
         short = facade_name(hass, zone_entity_id, name_prefix)
         self._attr_name = short
         self._attr_device_info = DeviceInfo(
@@ -187,6 +220,10 @@ class AmpZoneFacade(MediaPlayerEntity):
     @property
     def zone_entity_id(self) -> str:
         return self._zone_id
+
+    @property
+    def is_digital(self) -> bool:
+        return self._zone_kind == ZONE_KIND_DIGITAL
 
     async def async_added_to_hass(self) -> None:
         self._async_force_short_identity()
@@ -261,6 +298,21 @@ class AmpZoneFacade(MediaPlayerEntity):
             return False
         return decoder.state in (STATE_PLAYING, STATE_PAUSED)
 
+    def _zone_is_active(self) -> bool:
+        """Amp: matrix zone on. Digital: in this session or grouped to decoder."""
+        if self.is_digital:
+            if self.entity_id and self._session.is_member(self.entity_id):
+                return True
+            for leader_id in (self._decoder_id, self._playback_id):
+                leader = self.hass.states.get(leader_id)
+                if leader is None:
+                    continue
+                members = leader.attributes.get("group_members") or []
+                if self._zone_id in members:
+                    return True
+            return False
+        return _is_on_state(self._zone())
+
     async def _async_call(
         self,
         service: str,
@@ -296,7 +348,32 @@ class AmpZoneFacade(MediaPlayerEntity):
             return False
 
     async def async_power_zone_on(self) -> None:
-        """Turn the underlying amp zone on (and select decoder source)."""
+        """Turn amp zone on, or join digital receiver to the WiiM / decoder."""
+        if self.is_digital:
+            await self._async_call(SERVICE_TURN_ON, self._zone_id, critical=False)
+            if self._digital_sound_mode:
+                await self._async_call(
+                    "select_sound_mode",
+                    self._zone_id,
+                    {"sound_mode": self._digital_sound_mode},
+                    critical=False,
+                )
+            # Join the MA/AirPlay receiver onto the decoder (WiiM) SyncGroup.
+            ok = await self._async_call(
+                "join",
+                self._decoder_id,
+                {"group_members": [self._zone_id]},
+                critical=False,
+            )
+            if not ok and self._playback_id != self._decoder_id:
+                await self._async_call(
+                    "join",
+                    self._playback_id,
+                    {"group_members": [self._decoder_id, self._zone_id]},
+                    critical=False,
+                )
+            return
+
         await self._async_call(SERVICE_TURN_ON, self._zone_id, critical=True)
         if self._source_name:
             # Wrong/missing source name must not abort join/play.
@@ -314,7 +391,10 @@ class AmpZoneFacade(MediaPlayerEntity):
                 )
 
     async def async_power_zone_off(self) -> None:
-        """Turn the underlying amp zone off."""
+        """Turn amp zone off, or unjoin digital receiver from the SyncGroup."""
+        if self.is_digital:
+            await self._async_call("unjoin", self._zone_id, critical=False)
+            return
         await self._async_call(SERVICE_TURN_OFF, self._zone_id, critical=False)
 
     @property
@@ -336,8 +416,7 @@ class AmpZoneFacade(MediaPlayerEntity):
 
     @property
     def state(self) -> MediaPlayerState | None:
-        zone = self._zone()
-        if not _is_on_state(zone):
+        if not self._zone_is_active():
             return MediaPlayerState.OFF
         playback = self._playback()
         if playback is not None and playback.state != STATE_UNAVAILABLE:
@@ -534,7 +613,7 @@ class AmpZoneFacade(MediaPlayerEntity):
 
     def _session_media_attr(self, key: str) -> Any:
         """Media metadata only when this zone is on (hearing the feed)."""
-        if not _is_on_state(self._zone()):
+        if not self._zone_is_active():
             return None
         return self._playback_attr(key)
 
@@ -560,7 +639,7 @@ class AmpZoneFacade(MediaPlayerEntity):
 
     @property
     def media_image_url(self) -> str | None:
-        if not _is_on_state(self._zone()):
+        if not self._zone_is_active():
             return None
         playback = self._playback()
         if playback is not None:
@@ -594,7 +673,9 @@ class AmpZoneFacade(MediaPlayerEntity):
             "zone_entity_id": self._zone_id,
             "decoder_entity_id": self._decoder_id,
             "playback_entity_id": self._playback_id,
+            "zone_kind": self._zone_kind,
             "on_source": self._source_name,
+            "digital_sound_mode": self._digital_sound_mode,
             "session_leader": self._session.leader_id,
             "session_members": self._session.members,
         }

@@ -1,0 +1,178 @@
+# Mirror of automations installed on HA (192.168.68.115).
+# Live config is in HA UI automations — this file is documentation / backup.
+#
+# Helpers:
+#   input_boolean.theater_zone / living_zone
+#   input_number.theater_volume / living_volume
+#
+# Mapping:
+#   WiiM MA:          media_player.wiim_pro_2
+#   Theater Sony MA:  media_player.basement_str_az1000es
+#   Living Sony MA:   media_player.living_room_str_az1000es
+#   SyncGroup:        media_player.theater_living_room_speakers
+#
+# Note: AVR surround sound_mode is NOT exposed in HA (no Songpal select).
+#       Multi Stereo / 2ch still needs C4 programming or a Songpal integration.
+
+input_boolean:
+  theater_zone:
+    name: Theater zone
+    icon: mdi:speaker
+  living_zone:
+    name: Living zone
+    icon: mdi:speaker
+
+input_number:
+  theater_volume:
+    name: Theater volume
+    icon: mdi:volume-high
+    min: 0
+    max: 1
+    step: 0.01
+    mode: slider
+    initial: 0.35
+  living_volume:
+    name: Living volume
+    icon: mdi:volume-high
+    min: 0
+    max: 1
+    step: 0.01
+    mode: slider
+    initial: 0.35
+
+automation:
+  - id: sony_sync_theater_join
+    alias: "Sony sync — Theater join"
+    mode: single
+    triggers:
+      - trigger: state
+        entity_id: input_boolean.theater_zone
+        to: "on"
+    actions:
+      - action: media_player.turn_on
+        target:
+          entity_id: media_player.basement_str_az1000es
+      - delay:
+          seconds: 2
+      - action: media_player.volume_set
+        target:
+          entity_id: media_player.basement_str_az1000es
+        data:
+          volume_level: "{{ states('input_number.theater_volume') | float }}"
+      - action: media_player.join
+        continue_on_error: true
+        target:
+          entity_id: media_player.wiim_pro_2
+        data:
+          group_members:
+            - media_player.basement_str_az1000es
+      - if:
+          - condition: template
+            value_template: >-
+              {{ 'basement_str_az1000es' not in
+                 (state_attr('media_player.wiim_pro_2', 'group_members') | default([], true) | join(',')) }}
+        then:
+          - action: media_player.join
+            target:
+              entity_id: media_player.theater_living_room_speakers
+            data:
+              group_members:
+                - media_player.wiim_pro_2
+                - media_player.basement_str_az1000es
+
+  - id: sony_sync_theater_leave
+    alias: "Sony sync — Theater leave"
+    mode: single
+    triggers:
+      - trigger: state
+        entity_id: input_boolean.theater_zone
+        to: "off"
+    actions:
+      - action: media_player.unjoin
+        target:
+          entity_id: media_player.basement_str_az1000es
+
+  - id: sony_sync_theater_volume
+    alias: "Sony sync — Theater volume"
+    mode: restart
+    triggers:
+      - trigger: state
+        entity_id: input_number.theater_volume
+    conditions:
+      - condition: state
+        entity_id: input_boolean.theater_zone
+        state: "on"
+    actions:
+      - action: media_player.volume_set
+        target:
+          entity_id: media_player.basement_str_az1000es
+        data:
+          volume_level: "{{ states('input_number.theater_volume') | float }}"
+
+  - id: sony_sync_living_join
+    alias: "Sony sync — Living join"
+    mode: single
+    triggers:
+      - trigger: state
+        entity_id: input_boolean.living_zone
+        to: "on"
+    actions:
+      - action: media_player.turn_on
+        target:
+          entity_id: media_player.living_room_str_az1000es
+      - delay:
+          seconds: 2
+      - action: media_player.volume_set
+        target:
+          entity_id: media_player.living_room_str_az1000es
+        data:
+          volume_level: "{{ states('input_number.living_volume') | float }}"
+      - action: media_player.join
+        continue_on_error: true
+        target:
+          entity_id: media_player.wiim_pro_2
+        data:
+          group_members:
+            - media_player.living_room_str_az1000es
+      - if:
+          - condition: template
+            value_template: >-
+              {{ 'living_room_str_az1000es' not in
+                 (state_attr('media_player.wiim_pro_2', 'group_members') | default([], true) | join(',')) }}
+        then:
+          - action: media_player.join
+            target:
+              entity_id: media_player.theater_living_room_speakers
+            data:
+              group_members:
+                - media_player.wiim_pro_2
+                - media_player.living_room_str_az1000es
+
+  - id: sony_sync_living_leave
+    alias: "Sony sync — Living leave"
+    mode: single
+    triggers:
+      - trigger: state
+        entity_id: input_boolean.living_zone
+        to: "off"
+    actions:
+      - action: media_player.unjoin
+        target:
+          entity_id: media_player.living_room_str_az1000es
+
+  - id: sony_sync_living_volume
+    alias: "Sony sync — Living volume"
+    mode: restart
+    triggers:
+      - trigger: state
+        entity_id: input_number.living_volume
+    conditions:
+      - condition: state
+        entity_id: input_boolean.living_zone
+        state: "on"
+    actions:
+      - action: media_player.volume_set
+        target:
+          entity_id: media_player.living_room_str_az1000es
+        data:
+          volume_level: "{{ states('input_number.living_volume') | float }}"

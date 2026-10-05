@@ -142,9 +142,24 @@ Reconfigure anytime: integration → **Configure** (refreshes unique id if decod
 4. Do **not** put amp facades in a SyncGroup with each other  
 5. If audio cuts out mid-stream, try the facade’s **HTTP Profile** in MA player settings  
 
-### WiiM + Sony (or other) SyncGroups
+### WiiM + Sony (or other) digital zones
 
-Use when digitally synced speakers (e.g. theater/basement AVRs) should play with the WiiM while amp ceilings ride the WiiM analog out.
+Amp ceilings and digitally synced receivers can share **one** MA group list.
+
+1. Amp Zone Player → **Configure**
+2. Keep amp zones as today
+3. **Digital receivers** = `Basement STR-AZ1000ES`, `Living Room STR-AZ1000ES` (MA players)
+4. Prefer **Decoder** = the **Music Assistant** WiiM player (`wiim_pro_2`) so join/sync works
+5. Optional sound mode (only if the player exposes `select_sound_mode`)
+6. Expose the new facades to MA (same as amp facades)
+
+**Day-to-day in MA:** Select **Bar Speakers** → Group members → check **Basement STR-AZ1000ES** (facade). Background: Amp Zone Player joins that Sony to the WiiM. Amp rooms still only power the matrix.
+
+Hide raw Sonys / SyncGroups in MA if you only want facades.
+
+### WiiM + Sony SyncGroups (optional)
+
+Use only if you still want a dedicated SyncGroup play target. With digital zones above, SyncGroups are optional.
 
 1. In MA: **Settings → Players → Add group player** → **native Sync Group** (not Universal)  
 2. Create one or more groups that all include the **WiiM**, for example:  
@@ -162,7 +177,7 @@ Use when digitally synced speakers (e.g. theater/basement AVRs) should play with
 | Goal | Do this |
 |---|---|
 | Amp rooms only | Play a facade; join other facades. Leave SyncGroups / Sonys off. |
-| Sonys + optional amp | Play the SyncGroup. Turn on / join the facades you want (source = WiiM). |
+| Sonys + optional amp | Play a facade or SyncGroup. Join amp facades + digital receiver facades in the same group list. |
 | New track from a facade with playback set | Play on the facade — queue goes to the SyncGroup; Sonys stay in sync. |
 
 Do **not** press Play on a facade *and* on the SyncGroup for the same listen if that would double-drive the WiiM. With **Queue / SyncGroup player** set, facade Play is enough.
