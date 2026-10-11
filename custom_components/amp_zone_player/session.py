@@ -193,6 +193,14 @@ class AmpSession:
                     "Unjoin: failed to power off zone for %s", facade_entity_id
                 )
 
+        await self.async_drop_member(facade_entity_id)
+
+    async def async_drop_member(self, facade_entity_id: str) -> None:
+        """Remove a facade from the session without touching the zone player.
+
+        Used when a digital receiver already left the decoder SyncGroup
+        (e.g. Control4 took the STR for TV).
+        """
         if facade_entity_id not in self._members:
             self.async_notify()
             return
@@ -202,4 +210,13 @@ class AmpSession:
             self.leader_id = self._members[0] if self._members else None
             _LOGGER.info("Session leader moved to %s", self.leader_id)
 
+        facade = self._facades.get(facade_entity_id)
+        if facade is not None:
+            facade.clear_digital_sync_seen()
+
+        _LOGGER.info(
+            "Dropped %s from session (members now %s)",
+            facade_entity_id,
+            self._members,
+        )
         self.async_notify()

@@ -17,9 +17,11 @@ This integration does **not** speak amplifier UDP. It bridges existing Home Assi
 | Role | What you configure | Used for |
 |---|---|---|
 | **Amp zone** | Matrix zone `media_player` (e.g. [Control4 Audio](https://github.com/heatvent/ha-c4-audio) speaker zones) | On / off, volume, mute, optional source |
-| **Digital zone** | MA / AirPlay / Cast player (e.g. Basement STR-AZ1000ES) | Same group UI; join/unjoin syncs to the WiiM |
-| **Decoder** | Streamer `media_player` (prefer the **Music Assistant** WiiM entity for digital join) | Analog feed + SyncGroup leader for receivers |
+| **Digital zone** | MA / AirPlay / Cast player (e.g. Theater STR, Living Room STR) | Same group UI; join/unjoin syncs to the WiiM |
+| **Decoder** | Streamer `media_player` — prefer the **Music Assistant** WiiM (`wiim_pro_ma_decoder`) | Analog feed + SyncGroup leader for receivers |
 | **Playback (optional)** | MA SyncGroup / other queue player | Play / pause / stop / next when you want a dedicated queue owner |
+
+Recommended entity ids (rename in HA if needed): native WiiM integration → `media_player.wiim_pro`; MA WiiM used as decoder → `media_player.wiim_pro_ma_decoder`. Facades use short room names (`bar_speakers`, `theater_speakers`).
 
 ---
 
@@ -54,9 +56,9 @@ This integration does **not** speak amplifier UDP. It bridges existing Home Assi
 You play on Bar Speakers (facade)
         │
         ├─► Amp session: Bar is leader; zone on; source selected
-        ├─► Group members → Kitchen (amp on) + Basement STR facade
-        │         └─► digital: join Basement STR-AZ1000ES to WiiM
-        └─► Queue: playback target or raw WiiM
+        ├─► Group members → Kitchen (amp on) + Theater Speakers facade
+        │         └─► digital: join Theater STR to WiiM SyncGroup
+        └─► Queue: playback target or decoder (MA WiiM)
                     ├─ WiiM (analog → amp → Bar / Kitchen / …)
                     └─ Sonys (digital sync with WiiM)
 ```
@@ -69,9 +71,10 @@ You play on Bar Speakers (facade)
 |---|---|
 | Play on **Bar Speakers** | Bar becomes session **leader**; that zone turns on; queue goes to the playback target |
 | **Group / members** → add Kitchen + Patio | Those **amp** zones turn on and join the session (`group_members` merges — does not replace) |
-| **Group / members** → add Basement STR facade | Receiver joins the WiiM SyncGroup; volume on that facade controls the Sony |
+| **Group / members** → add Theater Speakers facade | Receiver joins the WiiM SyncGroup; volume on that facade controls the Sony |
 | Volume on Kitchen | Kitchen amp zone volume only |
-| Remove / power off Patio or Basement facade | That room leaves; queue keeps playing if other rooms remain |
+| Remove / power off Patio or Theater facade | That room leaves; queue keeps playing if other rooms remain |
+| TV / Control4 steals a Sony from the SyncGroup | That digital facade is dropped from the Amp session automatically (membership matches reality) |
 | **Stop** on a facade | Stops (or pauses) the **playback** target (whole queue) |
 
 **Do not** put amp facades in a Music Assistant SyncGroup with each other. Use HA **group / members** (join) on the facades. Digital receiver facades belong in that same list — not as raw Sonys mixed into an amp-only SyncGroup.
@@ -83,9 +86,11 @@ You play on Bar Speakers (facade)
 - Composer-style sessions via HA `media_player.join` / `unjoin` and `group_members`
 - Shared queue on decoder or optional SyncGroup playback target
 - **Digital receiver zones** — MA/AirPlay/Cast players in the same group list; join syncs them to the WiiM
+- **SyncGroup steal reconcile** — if a digital receiver leaves the WiiM SyncGroup (TV/Control4, etc.), its facade leaves the Amp session
 - Optional `select_source` when an amp zone turns on (exact name from the zone `source_list`)
 - Optional sound mode when a digital zone joins (if the player exposes `select_sound_mode`)
 - Per-zone volume; leaving a room does not stop the queue for others
+- Short facade names (`Bar Speakers`, `Theater Speakers`) from amp / receiver labels
 - Zone picker: Control4 Audio **speaker** zones, plus matrix zones from Monoprice, Russound, Yamaha, Onkyo, Denon, etc.
 - Services to turn all zones on/off for an entry
 - Diagnostics download + repair if the configured source is missing from every zone `source_list`
@@ -127,18 +132,18 @@ Copy `custom_components/amp_zone_player` into `config/custom_components/`, resta
 
 ## Setup
 
-1. **Decoder** — Prefer the **Music Assistant** WiiM player (needed for digital join). Analog out still feeds the amp.
+1. **Decoder** — Prefer the **Music Assistant** WiiM player (`media_player.wiim_pro_ma_decoder`). Needed for digital join. Analog out still feeds the amp. Keep the native WiiM entity as `media_player.wiim_pro` (do not use it as Decoder when you have digital zones).
 2. **Amp zones** — matrix room players (Control4 Audio names must include “Speakers”; bare Amp/Switch players are hidden)
-3. **Digital receivers (optional)** — MA players for Sonys / other syncable endpoints (e.g. `Basement STR-AZ1000ES`)
+3. **Digital receivers (optional)** — MA players for Sonys / other syncable endpoints (e.g. `Theater STR`, `Living Room STR`)
 4. **Digital sound mode (optional)** — exact `sound_mode` string if the player supports it (often blank for Sonys in HA)
 5. **Queue / SyncGroup player (optional)** — leave empty unless you want a dedicated SyncGroup as the queue owner
 6. **Amp input / source** — plain-text name from the amp zone source list (e.g. `WiiM Pro`), or **None**
 7. **Name prefix** — usually blank
 8. **Hub name** — optional (blank → `Amp zones`); does not prefix player names
 
-Facade names look like `Bar Speakers` or `Basement STR-AZ1000ES`; entity ids like `media_player.bar_speakers` when free.
+Facades are named like `Bar Speakers` / `Theater Speakers` with entity ids `media_player.bar_speakers` / `media_player.theater_speakers` when free. Hide raw C4 zones, native WiiM, and raw Sonys in the HA UI if you only want facades; do **not** disable the decoder or digital backends — facades still need them.
 
-Reconfigure anytime: integration → **Configure** (refreshes unique id if decoder/zones change).
+Reconfigure anytime: integration → **Configure** (updates decoder/zones; after renaming the decoder entity, Configure again so the entry points at the new id).
 
 ---
 
@@ -146,8 +151,8 @@ Reconfigure anytime: integration → **Configure** (refreshes unique id if decod
 
 ### Amp rooms only
 
-1. Player providers → **Home Assistant Media Players** → enable the **facades** only  
-2. Hide/uncheck the raw WiiM and the raw amp zone entities (do not disable the WiiM entity in HA — facades still need it)  
+1. Player providers → **Home Assistant Media Players** → select the **facades only** (e.g. all `*_speakers` from this integration)  
+2. Do not expose raw WiiM, raw C4 amp zones, or raw Sonys here  
 3. Select a facade → play → use **group / members** to add other facades  
 4. Do **not** put amp facades in a SyncGroup with each other  
 5. If audio cuts out mid-stream, try the facade’s **HTTP Profile** in MA player settings  
@@ -158,14 +163,14 @@ Amp ceilings and digitally synced receivers can share **one** MA group list.
 
 1. Amp Zone Player → **Configure**
 2. Keep amp zones as today
-3. **Digital receivers** = `Basement STR-AZ1000ES`, `Living Room STR-AZ1000ES` (MA players)
-4. Prefer **Decoder** = the **Music Assistant** WiiM player (`wiim_pro_2`) so join/sync works
+3. **Digital receivers** = Theater STR / Living Room STR (MA players for the Sonys)
+4. **Decoder** = Music Assistant WiiM (`media_player.wiim_pro_ma_decoder`) so join/sync works
 5. Optional sound mode (only if the player exposes `select_sound_mode`)
-6. Expose the new facades to MA (same as amp facades)
+6. Expose the new facades to MA (same as amp facades) — e.g. `Theater Speakers`, `Living Room Speakers`
 
-**Day-to-day in MA:** Select **Bar Speakers** → Group members → check **Basement STR-AZ1000ES** (facade). Background: Amp Zone Player joins that Sony to the WiiM. Amp rooms still only power the matrix.
+**Day-to-day in MA:** Select **Bar Speakers** → Group members → check **Theater Speakers** (facade). Background: Amp Zone Player joins that Sony to the WiiM. Amp rooms still only power the matrix.
 
-Hide raw Sonys / SyncGroups in MA if you only want facades.
+Hide raw Sonys / SyncGroups / native WiiM in MA if you only want facades.
 
 ### WiiM + Sony SyncGroups (optional)
 
@@ -173,9 +178,9 @@ Use only if you still want a dedicated SyncGroup play target. With digital zones
 
 1. In MA: **Settings → Players → Add group player** → **native Sync Group** (not Universal)  
 2. Create one or more groups that all include the **WiiM**, for example:  
-   - `Theater Speakers` = WiiM + basement Sony  
-   - `Living Room Speakers` = WiiM + living-room Sony  
-   - `Theater / Living Room` = WiiM + both Sonys  
+   - WiiM + Theater Sony  
+   - WiiM + Living Room Sony  
+   - WiiM + both Sonys  
 3. Play **one** of those groups at a time (shared WiiM)  
 4. On each Sony: **Stereo / Direct** (or Pure Direct); tune **Static playback delay** if a room echoes  
 5. Hide the raw WiiM and Sonys in the MA UI if you only want the SyncGroups + facades visible (**Hide**, do not disable)  
@@ -254,9 +259,11 @@ Both take `config_entry_id` (pick the Amp Zone Player hub in the UI).
 |---|---|
 | No music | Decoder / SyncGroup can play a URL in HA; logs show `play_media → …`; amp source spelling |
 | Third room replaces second | Need **0.2.2+** (join merges members) |
-| Digital receiver does not sync | Decoder should be the **MA** WiiM player; raw Sony join works by hand in MA first |
+| Digital receiver does not sync | Decoder should be the **MA** WiiM (`wiim_pro_ma_decoder`); raw Sony join works by hand in MA first |
 | Receiver not in MA group list | Add it under **Digital receivers** and expose the new facade to HA Media Players |
-| Wrong theater in group list | Ignore Control4 Amp “Theater” facades — use the digital Sony facade |
+| Wrong theater in group list | Ignore Control4 Amp “Theater” zones — use the digital **Theater Speakers** facade |
+| Digital facade stays in group after TV takes Sony | Need **1.2.1+** (SyncGroup steal reconcile) |
+| Facades unavailable after renaming decoder | Amp Zone Player → **Configure** → pick the new decoder entity id |
 | Zones on, still silence | WiiM playing? Correct amp input? Zone volume > 0? |
 | Mid-stream dropouts | MA player **HTTP Profile** on the facade |
 | Echo vs Sonys | SyncGroup members only; Stereo/Direct on AVR; Static playback delay |

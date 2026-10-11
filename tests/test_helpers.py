@@ -9,6 +9,7 @@ sys.path.insert(
 
 from helpers import (  # noqa: E402
     SOURCE_NONE,
+    digital_zone_in_sync_group,
     entry_unique_id,
     map_player_state,
     normalize_playback,
@@ -71,3 +72,20 @@ def test_map_player_state_standby_to_idle():
     assert map_player_state("standby") == "idle"
     assert map_player_state("playing") == "playing"
     assert map_player_state("unknown") is None
+
+
+def test_digital_zone_in_sync_group():
+    zone = "media_player.sony"
+    decoder = "media_player.wiim_pro_ma_decoder"
+    assert digital_zone_in_sync_group(
+        zone, decoder, decoder, [zone], None, None
+    )
+    assert digital_zone_in_sync_group(
+        zone, decoder, decoder, None, None, [decoder]
+    )
+    assert not digital_zone_in_sync_group(
+        zone, decoder, decoder, [], None, []
+    )
+    assert not digital_zone_in_sync_group(
+        zone, decoder, decoder, None, None, None
+    )

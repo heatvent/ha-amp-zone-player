@@ -9,8 +9,10 @@ sys.path.insert(
 
 from naming import (  # noqa: E402
     facade_object_id,
+    room_speakers_label,
     short_from_entity_id,
     strip_amp_prefix,
+    strip_receiver_suffix,
     with_speakers_suffix,
 )
 
@@ -22,12 +24,21 @@ def test_strip_and_speakers():
     assert with_speakers_suffix("Dining Room") == "Dining Room Speakers"
 
 
+def test_receiver_to_speakers_label():
+    assert strip_receiver_suffix("Living Room STR") == "Living Room"
+    assert strip_receiver_suffix("Theater STR-AZ1000ES") == "Theater"
+    assert room_speakers_label("Living Room STR") == "Living Room Speakers"
+    assert room_speakers_label("Theater STR") == "Theater Speakers"
+    assert room_speakers_label("Bar Speakers") == "Bar Speakers"
+
+
 def test_short_from_entity_id():
     assert (
         short_from_entity_id("media_player.media_closet_control4_amp_bar_speakers")
         == "Bar Speakers"
     )
     assert short_from_entity_id("media_player.bar") == "Bar"
+    assert short_from_entity_id("media_player.living_room_str") == "Living Room"
 
 
 def test_facade_object_id():

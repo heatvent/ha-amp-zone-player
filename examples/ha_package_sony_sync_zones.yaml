@@ -6,10 +6,11 @@
 #   input_number.theater_volume / living_volume
 #
 # Mapping:
-#   WiiM MA:          media_player.wiim_pro_2
-#   Theater Sony MA:  media_player.basement_str_az1000es
-#   Living Sony MA:   media_player.living_room_str_az1000es
-#   SyncGroup:        media_player.theater_living_room_speakers
+#   WiiM MA decoder:  media_player.wiim_pro_ma_decoder
+#   WiiM native:      media_player.wiim_pro
+#   Theater Sony MA:  media_player.theater_str
+#   Living Sony MA:   media_player.living_room_str
+#   Facades:          media_player.theater_speakers / living_room_speakers
 #
 # Note: AVR surround sound_mode is NOT exposed in HA (no Songpal select).
 #       Multi Stereo / 2ch still needs C4 programming or a Songpal integration.
@@ -62,7 +63,7 @@ automation:
       - action: media_player.join
         continue_on_error: true
         target:
-          entity_id: media_player.wiim_pro_2
+          entity_id: media_player.wiim_pro_ma_decoder
         data:
           group_members:
             - media_player.basement_str_az1000es
@@ -70,14 +71,14 @@ automation:
           - condition: template
             value_template: >-
               {{ 'basement_str_az1000es' not in
-                 (state_attr('media_player.wiim_pro_2', 'group_members') | default([], true) | join(',')) }}
+                 (state_attr('media_player.wiim_pro_ma_decoder', 'group_members') | default([], true) | join(',')) }}
         then:
           - action: media_player.join
             target:
               entity_id: media_player.theater_living_room_speakers
             data:
               group_members:
-                - media_player.wiim_pro_2
+                - media_player.wiim_pro_ma_decoder
                 - media_player.basement_str_az1000es
 
   - id: sony_sync_theater_leave
@@ -130,7 +131,7 @@ automation:
       - action: media_player.join
         continue_on_error: true
         target:
-          entity_id: media_player.wiim_pro_2
+          entity_id: media_player.wiim_pro_ma_decoder
         data:
           group_members:
             - media_player.living_room_str_az1000es
@@ -138,14 +139,14 @@ automation:
           - condition: template
             value_template: >-
               {{ 'living_room_str_az1000es' not in
-                 (state_attr('media_player.wiim_pro_2', 'group_members') | default([], true) | join(',')) }}
+                 (state_attr('media_player.wiim_pro_ma_decoder', 'group_members') | default([], true) | join(',')) }}
         then:
           - action: media_player.join
             target:
               entity_id: media_player.theater_living_room_speakers
             data:
               group_members:
-                - media_player.wiim_pro_2
+                - media_player.wiim_pro_ma_decoder
                 - media_player.living_room_str_az1000es
 
   - id: sony_sync_living_leave

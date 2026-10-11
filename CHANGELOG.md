@@ -1,5 +1,14 @@
 # Changelog
 
+## 1.2.2 - 2026-10-10
+
+- README: document recommended WiiM entity ids (`wiim_pro` native / `wiim_pro_ma_decoder` for MA), Theater/Living Room Speakers facades, SyncGroup steal reconcile, and Configure-after-rename.
+- Facade naming: strip receiver suffixes (STR / AVR / Receiver) so digital facades become `Theater Speakers` / `living_room_speakers` instead of `Theater STR Speakers`.
+
+## 1.2.1 - 2026-10-10
+
+- Digital zones: when a receiver leaves the decoder SyncGroup (e.g. Control4 takes an STR for TV), drop that facade from the Amp session so MA group membership matches reality.
+
 ## 1.2.0 - 2026-10-05
 
 - Digital receiver zones: optional MA/AirPlay/Cast players (e.g. Sony AVRs) appear in the same Amp Zone Player group list as amp facades; joining syncs them to the WiiM in the background.

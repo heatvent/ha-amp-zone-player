@@ -22,6 +22,12 @@ _ZONE_PREFIX = re.compile(
 
 _HAS_SPEAKERS = re.compile(r"speakers?$", re.IGNORECASE)
 
+# "Living Room STR" / "Theater STR-AZ1000ES" / "Theater Receiver" → room label
+_RECEIVER_SUFFIX = re.compile(
+    r"\s+(?:STR(?:-[A-Z0-9]+)?|AVR|Receiver)$",
+    re.IGNORECASE,
+)
+
 _SLUG_DROP = {
     "control4",
     "c4",
@@ -33,6 +39,12 @@ _SLUG_DROP = {
     "zone",
     "media",
     "closet",
+}
+
+_SLUG_DROP_TAIL = {
+    "str",
+    "avr",
+    "receiver",
 }
 
 _SLUGIFY = re.compile(r"[^a-z0-9]+")
@@ -64,6 +76,8 @@ def short_from_entity_id(entity_id: str) -> str | None:
         parts.pop(0)
     while parts and parts[-1].isdigit():
         parts.pop()
+    while parts and parts[-1].lower() in _SLUG_DROP_TAIL:
+        parts.pop()
     if not parts:
         return None
     return " ".join(part.capitalize() for part in parts)
@@ -77,6 +91,22 @@ def with_speakers_suffix(label: str) -> str:
     if _HAS_SPEAKERS.search(label):
         return label
     return f"{label} Speakers"
+
+
+def strip_receiver_suffix(name: str) -> str:
+    """Living Room STR / Theater Receiver → Living Room / Theater."""
+    cleaned = name.strip()
+    for _ in range(3):
+        nxt = _RECEIVER_SUFFIX.sub("", cleaned).strip()
+        if nxt == cleaned:
+            break
+        cleaned = nxt
+    return cleaned or name.strip()
+
+
+def room_speakers_label(name: str) -> str:
+    """Normalize a zone/receiver label to a short Speakers facade name."""
+    return with_speakers_suffix(strip_receiver_suffix(strip_amp_prefix(name)))
 
 
 def _candidate_score(label: str) -> tuple[int, int, int]:
@@ -98,13 +128,18 @@ def short_zone_label(hass: HomeAssistant, zone_entity_id: str) -> str:
     candidates: list[str] = []
 
     ent = er.async_get(hass).async_get(zone_entity_id)
-    if ent is not None:
-        for raw in (ent.original_name, ent.name):
-            if raw:
-                candidates.append(strip_amp_prefix(str(raw)))
+    # User-set registry name wins — long entity_id slugs (e.g. media_closet_theater_…)
+    # otherwise outscore a short "Theater Speakers" label.
+    if ent is not None and ent.name:
+        return room_speakers_label(str(ent.name))
+
+    if ent is not None and ent.original_name:
+        candidates.append(strip_receiver_suffix(strip_amp_prefix(str(ent.original_name))))
 
     state = hass.states.get(zone_entity_id)
-    candidates.append(strip_amp_prefix(friendly_name(state, zone_entity_id)))
+    candidates.append(
+        strip_receiver_suffix(strip_amp_prefix(friendly_name(state, zone_entity_id)))
+    )
 
     from_id = short_from_entity_id(zone_entity_id)
     if from_id:
@@ -115,7 +150,7 @@ def short_zone_label(hass: HomeAssistant, zone_entity_id: str) -> str:
         cleaned = [zone_entity_id.split(".", 1)[-1].replace("_", " ").title()]
 
     best = max(cleaned, key=_candidate_score)
-    return with_speakers_suffix(best)
+    return room_speakers_label(best)
 
 
 def facade_name(hass: HomeAssistant, zone_entity_id: str, name_prefix: str) -> str:

@@ -64,3 +64,22 @@ def map_player_state(raw: str | None) -> str | None:
     if raw is None:
         return None
     return STATE_MAP.get(raw)
+
+
+def digital_zone_in_sync_group(
+    zone_id: str,
+    decoder_id: str,
+    playback_id: str,
+    decoder_members: list[str] | None,
+    playback_members: list[str] | None,
+    zone_members: list[str] | None,
+) -> bool:
+    """True when a digital receiver is still grouped with the decoder SyncGroup."""
+    for members in (decoder_members, playback_members):
+        if members and zone_id in members:
+            return True
+    if zone_members and (
+        decoder_id in zone_members or playback_id in zone_members
+    ):
+        return True
+    return False

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import logging
 from typing import Any
 
@@ -53,13 +54,19 @@ from .const import (
     ZONE_KIND_AMP,
     ZONE_KIND_DIGITAL,
 )
-from .helpers import STATE_MAP as _STATE_VALUE_MAP, normalize_zones
+from .helpers import (
+    STATE_MAP as _STATE_VALUE_MAP,
+    digital_zone_in_sync_group,
+    normalize_zones,
+)
 from .naming import facade_name, facade_object_id
 from .session import AmpSession
 
 _LOGGER = logging.getLogger(__name__)
 
 DEVICE_NAME_FALLBACK = "Amp zones"
+# Debounce before dropping a digital room that left the SyncGroup (C4 steal, etc.).
+_DIGITAL_STEAL_GRACE_SEC = 1.5
 
 _STATE_ENUM = {
     "off": MediaPlayerState.OFF,
@@ -216,6 +223,9 @@ class AmpZoneFacade(MediaPlayerEntity):
             manufacturer="Music Assistant Amp Zone Player",
             model="Decoder + zone bridge",
         )
+        # Digital: True once we've observed this zone in the decoder SyncGroup.
+        self._digital_seen_in_sync = False
+        self._reconcile_task: asyncio.Task | None = None
 
     @property
     def zone_entity_id(self) -> str:
@@ -224,6 +234,58 @@ class AmpZoneFacade(MediaPlayerEntity):
     @property
     def is_digital(self) -> bool:
         return self._zone_kind == ZONE_KIND_DIGITAL
+
+    def clear_digital_sync_seen(self) -> None:
+        """Reset SyncGroup observation (after leave / external steal)."""
+        self._digital_seen_in_sync = False
+
+    def _digital_in_sync_group(self) -> bool:
+        decoder = self._decoder()
+        playback = self._playback()
+        zone = self._zone()
+        return digital_zone_in_sync_group(
+            self._zone_id,
+            self._decoder_id,
+            self._playback_id,
+            list(decoder.attributes.get("group_members") or [])
+            if decoder is not None
+            else None,
+            list(playback.attributes.get("group_members") or [])
+            if playback is not None
+            else None,
+            list(zone.attributes.get("group_members") or [])
+            if zone is not None
+            else None,
+        )
+
+    def _schedule_digital_reconcile(self) -> None:
+        """If a confirmed SyncGroup member disappears, drop it from the session."""
+        if not self.is_digital or not self.entity_id:
+            return
+        if not self._session.is_member(self.entity_id):
+            return
+        if not self._digital_seen_in_sync or self._digital_in_sync_group():
+            return
+        if self._reconcile_task is not None and not self._reconcile_task.done():
+            self._reconcile_task.cancel()
+        self._reconcile_task = self.hass.async_create_task(
+            self._async_reconcile_digital_steal()
+        )
+
+    async def _async_reconcile_digital_steal(self) -> None:
+        try:
+            await asyncio.sleep(_DIGITAL_STEAL_GRACE_SEC)
+        except asyncio.CancelledError:
+            return
+        if not self.entity_id or not self._session.is_member(self.entity_id):
+            return
+        if not self._digital_seen_in_sync or self._digital_in_sync_group():
+            return
+        _LOGGER.info(
+            "Digital zone %s left the decoder SyncGroup — removing from session",
+            self.entity_id,
+        )
+        await self._session.async_drop_member(self.entity_id)
 
     async def async_added_to_hass(self) -> None:
         self._async_force_short_identity()
@@ -235,6 +297,10 @@ class AmpZoneFacade(MediaPlayerEntity):
 
         @callback
         def _on_change(_event: Event) -> None:
+            if self.is_digital:
+                if self._digital_in_sync_group():
+                    self._digital_seen_in_sync = True
+                self._schedule_digital_reconcile()
             self.async_write_ha_state()
 
         self.async_on_remove(
@@ -244,6 +310,12 @@ class AmpZoneFacade(MediaPlayerEntity):
                 _on_change,
             )
         )
+        self.async_on_remove(self._cancel_reconcile_task)
+
+    def _cancel_reconcile_task(self) -> None:
+        if self._reconcile_task is not None and not self._reconcile_task.done():
+            self._reconcile_task.cancel()
+        self._reconcile_task = None
 
     @callback
     def _handle_session_update(self) -> None:
@@ -299,17 +371,17 @@ class AmpZoneFacade(MediaPlayerEntity):
         return decoder.state in (STATE_PLAYING, STATE_PAUSED)
 
     def _zone_is_active(self) -> bool:
-        """Amp: matrix zone on. Digital: in this session or grouped to decoder."""
+        """Amp: matrix zone on. Digital: in SyncGroup (or briefly optimistic while joining)."""
         if self.is_digital:
-            if self.entity_id and self._session.is_member(self.entity_id):
+            if self._digital_in_sync_group():
                 return True
-            for leader_id in (self._decoder_id, self._playback_id):
-                leader = self.hass.states.get(leader_id)
-                if leader is None:
-                    continue
-                members = leader.attributes.get("group_members") or []
-                if self._zone_id in members:
-                    return True
+            # Optimistic: session member but SyncGroup not updated yet after join.
+            if (
+                self.entity_id
+                and self._session.is_member(self.entity_id)
+                and not self._digital_seen_in_sync
+            ):
+                return True
             return False
         return _is_on_state(self._zone())
 
@@ -350,6 +422,7 @@ class AmpZoneFacade(MediaPlayerEntity):
     async def async_power_zone_on(self) -> None:
         """Turn amp zone on, or join digital receiver to the WiiM / decoder."""
         if self.is_digital:
+            self._digital_seen_in_sync = False
             await self._async_call(SERVICE_TURN_ON, self._zone_id, critical=False)
             if self._digital_sound_mode:
                 await self._async_call(
@@ -393,6 +466,7 @@ class AmpZoneFacade(MediaPlayerEntity):
     async def async_power_zone_off(self) -> None:
         """Turn amp zone off, or unjoin digital receiver from the SyncGroup."""
         if self.is_digital:
+            self._digital_seen_in_sync = False
             await self._async_call("unjoin", self._zone_id, critical=False)
             return
         await self._async_call(SERVICE_TURN_OFF, self._zone_id, critical=False)

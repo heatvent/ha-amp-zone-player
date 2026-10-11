@@ -15,7 +15,7 @@
         },
         "data_description": {
           "playback": "Optional Music Assistant House SyncGroup (or similar). Play/pause goes there so Sonys stay in sync; amp zones only open the analog feed from the WiiM.",
-          "digital_zones": "MA / AirPlay / Cast players (e.g. Basement STR-AZ1000ES). They appear in the same group list as amp facades; joining syncs them to the WiiM in the background.",
+          "digital_zones": "MA / AirPlay / Cast players (e.g. Theater STR, Living Room STR). They appear in the same group list as amp facades; joining syncs them to the WiiM in the background.",
           "digital_sound_mode": "Exact sound_mode string if the player exposes select_sound_mode (e.g. Multi Stereo). Leave blank if unavailable.",
           "name": "Shown only as the integration entry / device label. Player names stay short (e.g. Bar Speakers).",
           "zones": "Control4 Audio speaker zones, or zones from Monoprice, Russound, Yamaha, Onkyo, Denon, etc."
@@ -61,7 +61,7 @@
         },
         "data_description": {
           "playback": "Optional Music Assistant House SyncGroup. Leave empty to send play directly to the WiiM.",
-          "digital_zones": "MA / AirPlay / Cast players (e.g. Basement STR-AZ1000ES) that join the WiiM when checked in the group list.",
+          "digital_zones": "MA / AirPlay / Cast players (e.g. Theater STR, Living Room STR) that join the WiiM when checked in the group list.",
           "digital_sound_mode": "Exact sound_mode string if available (e.g. Multi Stereo).",
           "zones": "Control4 Audio speaker zones, or zones from Monoprice, Russound, Yamaha, Onkyo, Denon, etc."
         }
