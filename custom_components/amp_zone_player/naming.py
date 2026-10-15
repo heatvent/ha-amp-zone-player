@@ -28,6 +28,9 @@ _RECEIVER_SUFFIX = re.compile(
     re.IGNORECASE,
 )
 
+# "Bar Speakers (C4 amp)" / "Kitchen Speakers (hidden)" → drop trailing tags
+_PAREN_SUFFIX = re.compile(r"\s*\([^)]*\)\s*$")
+
 _SLUG_DROP = {
     "control4",
     "c4",
@@ -104,9 +107,22 @@ def strip_receiver_suffix(name: str) -> str:
     return cleaned or name.strip()
 
 
+def strip_paren_suffix(name: str) -> str:
+    """Bar Speakers (C4 amp) → Bar Speakers."""
+    cleaned = name.strip()
+    for _ in range(3):
+        nxt = _PAREN_SUFFIX.sub("", cleaned).strip()
+        if nxt == cleaned:
+            break
+        cleaned = nxt
+    return cleaned or name.strip()
+
+
 def room_speakers_label(name: str) -> str:
     """Normalize a zone/receiver label to a short Speakers facade name."""
-    return with_speakers_suffix(strip_receiver_suffix(strip_amp_prefix(name)))
+    return with_speakers_suffix(
+        strip_receiver_suffix(strip_amp_prefix(strip_paren_suffix(name)))
+    )
 
 
 def _candidate_score(label: str) -> tuple[int, int, int]:

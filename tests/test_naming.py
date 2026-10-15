@@ -12,6 +12,7 @@ from naming import (  # noqa: E402
     room_speakers_label,
     short_from_entity_id,
     strip_amp_prefix,
+    strip_paren_suffix,
     strip_receiver_suffix,
     with_speakers_suffix,
 )
@@ -30,6 +31,14 @@ def test_receiver_to_speakers_label():
     assert room_speakers_label("Living Room STR") == "Living Room Speakers"
     assert room_speakers_label("Theater STR") == "Theater Speakers"
     assert room_speakers_label("Bar Speakers") == "Bar Speakers"
+
+
+def test_paren_suffix_c4_amp_tag():
+    assert strip_paren_suffix("Bar Speakers (C4 amp)") == "Bar Speakers"
+    assert room_speakers_label("Bar Speakers (C4 amp)") == "Bar Speakers"
+    assert facade_object_id(room_speakers_label("Kitchen Speakers (C4 amp)")) == (
+        "kitchen_speakers"
+    )
 
 
 def test_short_from_entity_id():
