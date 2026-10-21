@@ -141,7 +141,7 @@ Copy `custom_components/amp_zone_player` into `config/custom_components/`, resta
 7. **Name prefix** — usually blank
 8. **Hub name** — optional (blank → `Amp zones`); does not prefix player names
 
-Facades are named like `Bar Speakers` / `Theater Speakers` with entity ids `media_player.bar_speakers` / `media_player.theater_speakers` when free. Hide raw C4 zones, native WiiM, and raw Sonys in the HA UI if you only want facades; do **not** disable the decoder or digital backends — facades still need them.
+Facades start as `Bar Speakers` / `Theater Speakers` (`media_player.bar_speakers`, `media_player.theater_speakers` when those ids are free). Renames you make in the Home Assistant UI are kept across restarts. Hide raw C4 zones, native WiiM, and raw Sonys in the HA UI if you only want facades; do **not** disable the decoder or digital backends — facades still need them.
 
 Reconfigure anytime: integration → **Configure** (updates decoder/zones; after renaming the decoder entity, Configure again so the entry points at the new id).
 

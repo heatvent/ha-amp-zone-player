@@ -37,7 +37,6 @@ from homeassistant.const import (
 )
 from homeassistant.core import Event, HomeAssistant, State, callback
 from homeassistant.exceptions import HomeAssistantError
-from homeassistant.helpers import entity_registry as er
 from homeassistant.helpers.device_registry import DeviceInfo
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.helpers.event import async_track_state_change_event
@@ -59,7 +58,7 @@ from .helpers import (
     digital_zone_in_sync_group,
     normalize_zones,
 )
-from .naming import facade_name, facade_object_id
+from .naming import facade_name
 from .session import AmpSession
 
 _LOGGER = logging.getLogger(__name__)
@@ -288,7 +287,6 @@ class AmpZoneFacade(MediaPlayerEntity):
         await self._session.async_drop_member(self.entity_id)
 
     async def async_added_to_hass(self) -> None:
-        self._async_force_short_identity()
         self._session.register(self)
         self.async_on_remove(lambda: self._session.unregister(self))
         self.async_on_remove(
@@ -320,35 +318,6 @@ class AmpZoneFacade(MediaPlayerEntity):
     @callback
     def _handle_session_update(self) -> None:
         self.async_write_ha_state()
-
-    @callback
-    def _async_force_short_identity(self) -> None:
-        if not self.entity_id:
-            return
-        short = facade_name(self.hass, self._zone_id, self._name_prefix)
-        self._attr_name = short
-        registry = er.async_get(self.hass)
-        entry = registry.async_get(self.entity_id)
-        if entry is None:
-            return
-        updates: dict[str, Any] = {
-            "has_entity_name": False,
-            "name": short,
-            "original_name": short,
-        }
-        desired = f"media_player.{facade_object_id(short)}"
-        if self.entity_id != desired:
-            conflict = registry.async_get(desired)
-            if conflict is None or conflict.unique_id == entry.unique_id:
-                updates["new_entity_id"] = desired
-        try:
-            registry.async_update_entity(self.entity_id, **updates)
-        except Exception:  # noqa: BLE001 — never fail setup over a rename
-            _LOGGER.exception(
-                "Could not normalize name/entity_id for %s (wanted %s)",
-                self.entity_id,
-                desired,
-            )
 
     def _zone(self) -> State | None:
         return self.hass.states.get(self._zone_id)
