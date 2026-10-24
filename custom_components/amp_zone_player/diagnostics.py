@@ -9,6 +9,8 @@ from homeassistant.core import HomeAssistant
 
 from .const import (
     CONF_DECODER,
+    CONF_DIGITAL_SOUND_MODE,
+    CONF_DIGITAL_ZONES,
     CONF_NAME_PREFIX,
     CONF_PLAYBACK,
     CONF_SOURCE,
@@ -25,8 +27,10 @@ async def async_get_config_entry_diagnostics(
     data = {**entry.data, **entry.options}
     decoder = data.get(CONF_DECODER)
     zones = list(data.get(CONF_ZONES) or [])
+    digital_zones = list(data.get(CONF_DIGITAL_ZONES) or [])
     playback = (data.get(CONF_PLAYBACK) or "").strip() or None
     source = normalize_source(data.get(CONF_SOURCE))
+    sound_mode = (data.get(CONF_DIGITAL_SOUND_MODE) or "").strip() or None
 
     zone_states: dict[str, Any] = {}
     for zone_id in zones:
@@ -47,6 +51,18 @@ async def async_get_config_entry_diagnostics(
             ),
         }
 
+    digital_states: dict[str, Any] = {}
+    for zone_id in digital_zones:
+        state = hass.states.get(zone_id)
+        if state is None:
+            digital_states[zone_id] = {"state": None}
+            continue
+        digital_states[zone_id] = {
+            "state": state.state,
+            "group_members": list(state.attributes.get("group_members") or []),
+            "source": state.attributes.get("source"),
+        }
+
     decoder_state = hass.states.get(decoder) if decoder else None
     playback_state = hass.states.get(playback) if playback else None
     session = hass.data.get(DOMAIN, {}).get(entry.entry_id)
@@ -60,6 +76,8 @@ async def async_get_config_entry_diagnostics(
         "config": {
             CONF_DECODER: decoder,
             CONF_ZONES: zones,
+            CONF_DIGITAL_ZONES: digital_zones,
+            CONF_DIGITAL_SOUND_MODE: sound_mode,
             CONF_SOURCE: source or None,
             CONF_PLAYBACK: playback,
             CONF_NAME_PREFIX: data.get(CONF_NAME_PREFIX) or "",
@@ -78,6 +96,7 @@ async def async_get_config_entry_diagnostics(
             ),
         },
         "zones": zone_states,
+        "digital_zones": digital_states,
         "session": {
             "leader_id": getattr(session, "leader_id", None) if session else None,
             "members": list(getattr(session, "members", []) or []) if session else [],
@@ -98,5 +117,6 @@ def _safe_media_attrs(state) -> dict[str, Any]:
         "media_content_type",
         "source",
         "group_members",
+        "source_list",
     )
     return {key: state.attributes.get(key) for key in keys if key in state.attributes}

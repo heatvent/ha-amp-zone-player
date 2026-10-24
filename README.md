@@ -75,6 +75,8 @@ You play on Bar Speakers (facade)
 | Volume on Kitchen | Kitchen amp zone volume only |
 | Remove / power off Patio or Theater facade | That room leaves; queue keeps playing if other rooms remain |
 | TV / Control4 steals a Sony from the SyncGroup | That digital facade is dropped from the Amp session automatically (membership matches reality) |
+| Control4 turns an amp zone off | That facade leaves the session after a short delay |
+| **Source** on a facade | Switches the WiiM input (Line In, Network, and the rest of its source list). Every room on this feed hears that input |
 | **Stop** on a facade | Stops (or pauses) the **playback** target (whole queue) |
 
 **Do not** put amp facades in a Music Assistant SyncGroup with each other. Use HA **group / members** (join) on the facades. Digital receiver facades belong in that same list — not as raw Sonys mixed into an amp-only SyncGroup.
@@ -87,6 +89,9 @@ You play on Bar Speakers (facade)
 - Shared queue on decoder or optional SyncGroup playback target
 - **Digital receiver zones** — MA/AirPlay/Cast players in the same group list; join syncs them to the WiiM
 - **SyncGroup steal reconcile** — if a digital receiver leaves the WiiM SyncGroup (TV/Control4, etc.), its facade leaves the Amp session
+- **Amp zone turned off elsewhere** — the facade leaves the session, so Music Assistant membership matches the matrix
+- **WiiM input** — facade source list follows the native WiiM (Line In, Network, …) when the decoder is the Music Assistant player
+- After a restart, zones that are already on (and receivers still in the SyncGroup) come back as session members
 - Optional `select_source` when an amp zone turns on (exact name from the zone `source_list`)
 - Optional sound mode when a digital zone joins (if the player exposes `select_sound_mode`)
 - Per-zone volume; leaving a room does not stop the queue for others
@@ -220,6 +225,7 @@ data:
 | **Unjoin / Off** | That zone off; leaves session; queue keeps playing if others remain |
 | **Stop** | Stops (or pauses) the **playback** target |
 | **Volume / Mute** | That zone only |
+| **Source** | WiiM hardware input (shared). Line In plays the analog input through the rooms that are on |
 | **Pause / Next / Seek** | Playback target (shared) |
 
 ---

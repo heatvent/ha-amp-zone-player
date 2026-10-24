@@ -9,6 +9,7 @@ sys.path.insert(
 
 from helpers import (  # noqa: E402
     SOURCE_NONE,
+    digital_join_members,
     digital_zone_in_sync_group,
     entry_unique_id,
     map_player_state,
@@ -17,6 +18,7 @@ from helpers import (  # noqa: E402
     normalize_source,
     normalize_zones,
     source_form_value,
+    wiim_native_unique_id,
 )
 
 
@@ -89,3 +91,25 @@ def test_digital_zone_in_sync_group():
     assert not digital_zone_in_sync_group(
         zone, decoder, decoder, None, None, None
     )
+
+
+def test_digital_join_members_keeps_existing():
+    assert digital_join_members(
+        "media_player.living",
+        ["media_player.theater"],
+    ) == ["media_player.theater", "media_player.living"]
+    assert digital_join_members("media_player.theater", ["media_player.theater"]) == [
+        "media_player.theater"
+    ]
+    assert digital_join_members("media_player.theater", None) == [
+        "media_player.theater"
+    ]
+
+
+def test_wiim_native_unique_id():
+    assert (
+        wiim_native_unique_id("wiim_uuid:FF98F09C-B8F8-41C7-D2AF-C9D5FF98F09C")
+        == "FF98F09CB8F841C7D2AFC9D5"
+    )
+    assert wiim_native_unique_id("not-a-wiim") is None
+    assert wiim_native_unique_id(None) is None

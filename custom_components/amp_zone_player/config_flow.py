@@ -177,6 +177,20 @@ def _platform_for(hass: HomeAssistant, entity_id: str) -> str | None:
     return entry.platform if entry else None
 
 
+def _is_own_facade(hass: HomeAssistant, entity_id: str) -> bool:
+    """True for an Amp Zone facade or the Music Assistant mirror of one."""
+    entry = er.async_get(hass).async_get(entity_id)
+    if entry is None:
+        return False
+    if entry.platform == DOMAIN:
+        return True
+    unique_id = entry.unique_id or ""
+    if entry.platform == "music_assistant" and unique_id.startswith("media_player."):
+        target = er.async_get(hass).async_get(unique_id)
+        return target is not None and target.platform == DOMAIN
+    return False
+
+
 async def _async_validate(
     hass: HomeAssistant, data: dict[str, Any]
 ) -> dict[str, str]:
@@ -216,6 +230,8 @@ async def _async_validate(
                 errors[CONF_DIGITAL_ZONES] = "decoder_in_zones"
             elif any(z in zones for z in digital):
                 errors[CONF_DIGITAL_ZONES] = "digital_in_amp_zones"
+            elif any(_is_own_facade(hass, z) for z in digital):
+                errors[CONF_DIGITAL_ZONES] = "digital_is_facade"
             elif playback and playback in digital:
                 errors[CONF_DIGITAL_ZONES] = "playback_in_zones"
             elif any(

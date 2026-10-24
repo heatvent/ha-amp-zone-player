@@ -66,6 +66,35 @@ def map_player_state(raw: str | None) -> str | None:
     return STATE_MAP.get(raw)
 
 
+def digital_join_members(zone_id: str, already: list[str] | None) -> list[str]:
+    """Zone ids to send on a decoder join: current digital members, then this one.
+
+    Some players replace SyncGroup membership with ``group_members`` instead of
+    adding. Sending only the new receiver would drop the others.
+    """
+    members: list[str] = []
+    for entity_id in already or []:
+        if entity_id and entity_id not in members:
+            members.append(entity_id)
+    if zone_id and zone_id not in members:
+        members.append(zone_id)
+    return members
+
+
+def wiim_native_unique_id(unique_id: str | None) -> str | None:
+    """Music Assistant ``wiim_uuid:`` id → native WiiM unique id (first 12 bytes)."""
+    if not unique_id:
+        return None
+    raw = unique_id.strip()
+    prefix = "wiim_uuid:"
+    if raw.lower().startswith(prefix):
+        raw = raw[len(prefix) :]
+    hexchars = "".join(ch for ch in raw if ch in "0123456789abcdefABCDEF")
+    if len(hexchars) < 24:
+        return None
+    return hexchars[:24].upper()
+
+
 def digital_zone_in_sync_group(
     zone_id: str,
     decoder_id: str,

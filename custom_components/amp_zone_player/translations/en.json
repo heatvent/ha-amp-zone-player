@@ -39,6 +39,7 @@
       "bad_zone": "Pick amp/matrix zone media players only (e.g. Control4 Audio speaker zones — not the bare Amp/Switch player)",
       "bad_decoder": "Pick a real streamer (WiiM, Cast, DLNA, Music Assistant player, etc.) — not an amp zone",
       "bad_digital_zone": "Digital zones must be streamer/receiver players (e.g. MA Sony), not amp matrix zones",
+      "digital_is_facade": "Digital receivers cannot be Amp Zone Player facades or their Music Assistant mirrors",
       "digital_in_amp_zones": "A player cannot be both an amp zone and a digital zone",
       "playback_in_zones": "Queue player cannot also be listed as an amp or digital zone"
     },
@@ -84,6 +85,7 @@
       "bad_zone": "Pick amp/matrix zone media players only (e.g. Control4 Audio speaker zones — not the bare Amp/Switch player)",
       "bad_decoder": "Pick a real streamer (WiiM, Cast, DLNA, Music Assistant player, etc.) — not an amp zone",
       "bad_digital_zone": "Digital zones must be streamer/receiver players (e.g. MA Sony), not amp matrix zones",
+      "digital_is_facade": "Digital receivers cannot be Amp Zone Player facades or their Music Assistant mirrors",
       "digital_in_amp_zones": "A player cannot be both an amp zone and a digital zone",
       "already_configured": "Another entry already uses this decoder and zone set",
       "playback_in_zones": "Queue player cannot also be listed as an amp or digital zone"

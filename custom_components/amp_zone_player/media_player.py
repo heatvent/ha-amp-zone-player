@@ -37,8 +37,10 @@ from homeassistant.const import (
 )
 from homeassistant.core import Event, HomeAssistant, State, callback
 from homeassistant.exceptions import HomeAssistantError
+from homeassistant.helpers import entity_registry as er
 from homeassistant.helpers.device_registry import DeviceInfo
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
+from homeassistant.helpers.entity_registry import EVENT_ENTITY_REGISTRY_UPDATED
 from homeassistant.helpers.event import async_track_state_change_event
 
 from .const import (
@@ -57,6 +59,7 @@ from .helpers import (
     STATE_MAP as _STATE_VALUE_MAP,
     digital_zone_in_sync_group,
     normalize_zones,
+    wiim_native_unique_id,
 )
 from .naming import facade_name
 from .session import AmpSession
@@ -64,8 +67,10 @@ from .session import AmpSession
 _LOGGER = logging.getLogger(__name__)
 
 DEVICE_NAME_FALLBACK = "Amp zones"
-# Debounce before dropping a digital room that left the SyncGroup (C4 steal, etc.).
-_DIGITAL_STEAL_GRACE_SEC = 1.5
+# Debounce before dropping a room that left outside this integration.
+_EXTERNAL_OFF_GRACE_SEC = 1.5
+# How long a digital join may look on before the SyncGroup must list it.
+_DIGITAL_JOIN_CONFIRM_SEC = 8.0
 
 _STATE_ENUM = {
     "off": MediaPlayerState.OFF,
@@ -132,6 +137,7 @@ async def async_setup_entry(
     session = AmpSession(hass, entry.entry_id)
     hass.data.setdefault(DOMAIN, {})
     hass.data[DOMAIN][entry.entry_id] = session
+    session.expect(len(zones) + len(digital_zones))
 
     _LOGGER.info(
         "Creating %s amp + %s digital facade(s) (decoder=%s playback=%s)",
@@ -224,7 +230,11 @@ class AmpZoneFacade(MediaPlayerEntity):
         )
         # Digital: True once we've observed this zone in the decoder SyncGroup.
         self._digital_seen_in_sync = False
+        self._digital_join_pending = False
         self._reconcile_task: asyncio.Task | None = None
+        self._join_confirm_task: asyncio.Task | None = None
+        self._amp_off_task: asyncio.Task | None = None
+        self._input_id = decoder_entity_id
 
     @property
     def zone_entity_id(self) -> str:
@@ -237,6 +247,19 @@ class AmpZoneFacade(MediaPlayerEntity):
     def clear_digital_sync_seen(self) -> None:
         """Reset SyncGroup observation (after leave / external steal)."""
         self._digital_seen_in_sync = False
+        self._digital_join_pending = False
+        self._cancel_task(self._join_confirm_task)
+        self._join_confirm_task = None
+
+    def adopt_existing_activity(self) -> bool:
+        """True when this zone is already open and should rejoin the session."""
+        if self.is_digital:
+            if self._digital_in_sync_group():
+                self._digital_seen_in_sync = True
+                self._digital_join_pending = False
+                return True
+            return False
+        return _is_on_state(self._zone())
 
     def _digital_in_sync_group(self) -> bool:
         decoder = self._decoder()
@@ -271,9 +294,30 @@ class AmpZoneFacade(MediaPlayerEntity):
             self._async_reconcile_digital_steal()
         )
 
+    def _schedule_join_confirm(self) -> None:
+        """Drop a digital member whose SyncGroup join never shows up."""
+        self._cancel_task(self._join_confirm_task)
+        self._join_confirm_task = self.hass.async_create_task(
+            self._async_confirm_digital_join()
+        )
+
+    def _schedule_amp_external_off(self) -> None:
+        """Drop an amp member whose matrix zone was turned off elsewhere."""
+        if self.is_digital or not self.entity_id:
+            return
+        if not self._session.is_member(self.entity_id):
+            return
+        if _is_on_state(self._zone()):
+            self._cancel_task(self._amp_off_task)
+            self._amp_off_task = None
+            return
+        if self._amp_off_task is not None and not self._amp_off_task.done():
+            return
+        self._amp_off_task = self.hass.async_create_task(self._async_amp_external_off())
+
     async def _async_reconcile_digital_steal(self) -> None:
         try:
-            await asyncio.sleep(_DIGITAL_STEAL_GRACE_SEC)
+            await asyncio.sleep(_EXTERNAL_OFF_GRACE_SEC)
         except asyncio.CancelledError:
             return
         if not self.entity_id or not self._session.is_member(self.entity_id):
@@ -286,7 +330,43 @@ class AmpZoneFacade(MediaPlayerEntity):
         )
         await self._session.async_drop_member(self.entity_id)
 
+    async def _async_confirm_digital_join(self) -> None:
+        try:
+            await asyncio.sleep(_DIGITAL_JOIN_CONFIRM_SEC)
+        except asyncio.CancelledError:
+            return
+        if self._digital_in_sync_group():
+            self._digital_seen_in_sync = True
+            self._digital_join_pending = False
+            self.async_write_ha_state()
+            return
+        self._digital_join_pending = False
+        if self.entity_id and self._session.is_member(self.entity_id):
+            _LOGGER.warning(
+                "Digital zone %s never appeared in the SyncGroup — removing from session",
+                self.entity_id,
+            )
+            await self._session.async_drop_member(self.entity_id)
+        else:
+            self.async_write_ha_state()
+
+    async def _async_amp_external_off(self) -> None:
+        try:
+            await asyncio.sleep(_EXTERNAL_OFF_GRACE_SEC)
+        except asyncio.CancelledError:
+            return
+        if not self.entity_id or not self._session.is_member(self.entity_id):
+            return
+        if _is_on_state(self._zone()):
+            return
+        _LOGGER.info(
+            "Amp zone %s turned off outside the session — removing",
+            self.entity_id,
+        )
+        await self._session.async_drop_member(self.entity_id)
+
     async def async_added_to_hass(self) -> None:
+        self._input_id = self._resolve_input_entity_id()
         self._session.register(self)
         self.async_on_remove(lambda: self._session.unregister(self))
         self.async_on_remove(
@@ -298,26 +378,81 @@ class AmpZoneFacade(MediaPlayerEntity):
             if self.is_digital:
                 if self._digital_in_sync_group():
                     self._digital_seen_in_sync = True
+                    self._digital_join_pending = False
                 self._schedule_digital_reconcile()
+            else:
+                self._schedule_amp_external_off()
             self.async_write_ha_state()
 
-        self.async_on_remove(
-            async_track_state_change_event(
-                self.hass,
-                [self._zone_id, self._decoder_id, self._playback_id],
-                _on_change,
-            )
-        )
-        self.async_on_remove(self._cancel_reconcile_task)
+        @callback
+        def _on_registry(event: Event) -> None:
+            if event.data.get("action") != "update":
+                return
+            new_id = event.data.get("entity_id")
+            old_id = event.data.get("old_entity_id")
+            if not old_id:
+                changes = event.data.get("changes") or {}
+                if isinstance(changes, dict):
+                    old_id = changes.get("entity_id")
+            if not old_id or not new_id or old_id == new_id:
+                return
+            if self._session.facade_for_entity(old_id) is self:
+                self.hass.async_create_task(self._session.async_rekey(old_id, new_id))
 
-    def _cancel_reconcile_task(self) -> None:
-        if self._reconcile_task is not None and not self._reconcile_task.done():
-            self._reconcile_task.cancel()
-        self._reconcile_task = None
+        watched = [self._zone_id, self._decoder_id, self._playback_id]
+        if self._input_id not in watched:
+            watched.append(self._input_id)
+        self.async_on_remove(
+            async_track_state_change_event(self.hass, watched, _on_change)
+        )
+        self.async_on_remove(
+            self.hass.bus.async_listen(EVENT_ENTITY_REGISTRY_UPDATED, _on_registry)
+        )
+        self.async_on_remove(self._cancel_background_tasks)
 
     @callback
     def _handle_session_update(self) -> None:
         self.async_write_ha_state()
+
+    def _cancel_background_tasks(self) -> None:
+        for task in (
+            self._reconcile_task,
+            self._join_confirm_task,
+            self._amp_off_task,
+        ):
+            self._cancel_task(task)
+        self._reconcile_task = None
+        self._join_confirm_task = None
+        self._amp_off_task = None
+
+    @staticmethod
+    def _cancel_task(task: asyncio.Task | None) -> None:
+        if task is not None and not task.done():
+            task.cancel()
+
+    def _resolve_input_entity_id(self) -> str:
+        """WiiM that owns Line In / Network. Falls back to the decoder."""
+        registry = er.async_get(self.hass)
+        decoder = registry.async_get(self._decoder_id)
+        if decoder is None:
+            return self._decoder_id
+        if decoder.platform == "wiim":
+            return self._decoder_id
+        native_uid = wiim_native_unique_id(decoder.unique_id)
+        if not native_uid:
+            return self._decoder_id
+        for entry in registry.entities.values():
+            if entry.domain != MP_DOMAIN or entry.platform != "wiim":
+                continue
+            if entry.disabled_by is not None:
+                continue
+            if (entry.unique_id or "").upper() != native_uid:
+                continue
+            return entry.entity_id
+        return self._decoder_id
+
+    def _input_state(self) -> State | None:
+        return self.hass.states.get(self._input_id)
 
     def _zone(self) -> State | None:
         return self.hass.states.get(self._zone_id)
@@ -344,10 +479,11 @@ class AmpZoneFacade(MediaPlayerEntity):
         if self.is_digital:
             if self._digital_in_sync_group():
                 return True
-            # Optimistic: session member but SyncGroup not updated yet after join.
+            # Optimistic only after a join call that has not failed yet.
             if (
                 self.entity_id
                 and self._session.is_member(self.entity_id)
+                and self._digital_join_pending
                 and not self._digital_seen_in_sync
             ):
                 return True
@@ -388,10 +524,14 @@ class AmpZoneFacade(MediaPlayerEntity):
                 raise
             return False
 
-    async def async_power_zone_on(self) -> None:
-        """Turn amp zone on, or join digital receiver to the WiiM / decoder."""
+    async def async_power_zone_on(self) -> bool:
+        """Turn amp zone on, or join digital receiver to the WiiM / decoder.
+
+        Returns False when a digital receiver did not join the SyncGroup.
+        """
         if self.is_digital:
             self._digital_seen_in_sync = False
+            self._digital_join_pending = False
             await self._async_call(SERVICE_TURN_ON, self._zone_id, critical=False)
             if self._digital_sound_mode:
                 await self._async_call(
@@ -400,21 +540,30 @@ class AmpZoneFacade(MediaPlayerEntity):
                     {"sound_mode": self._digital_sound_mode},
                     critical=False,
                 )
+            group = self._session.digital_zone_ids(extra=self._zone_id)
             # Join the MA/AirPlay receiver onto the decoder (WiiM) SyncGroup.
             ok = await self._async_call(
                 "join",
                 self._decoder_id,
-                {"group_members": [self._zone_id]},
+                {"group_members": group},
                 critical=False,
             )
             if not ok and self._playback_id != self._decoder_id:
-                await self._async_call(
+                playback_group = [self._decoder_id, *group]
+                ok = await self._async_call(
                     "join",
                     self._playback_id,
-                    {"group_members": [self._decoder_id, self._zone_id]},
+                    {"group_members": playback_group},
                     critical=False,
                 )
-            return
+            if not ok:
+                _LOGGER.warning(
+                    "Digital zone %s did not join the SyncGroup", self._zone_id
+                )
+                return False
+            self._digital_join_pending = True
+            self._schedule_join_confirm()
+            return True
 
         await self._async_call(SERVICE_TURN_ON, self._zone_id, critical=True)
         if self._source_name:
@@ -431,6 +580,7 @@ class AmpZoneFacade(MediaPlayerEntity):
                     self._source_name,
                     self._zone_id,
                 )
+        return True
 
     async def async_power_zone_off(self) -> None:
         """Turn amp zone off, or unjoin digital receiver from the SyncGroup."""
@@ -491,7 +641,37 @@ class AmpZoneFacade(MediaPlayerEntity):
             raw = decoder.attributes.get("supported_features")
             if isinstance(raw, int):
                 features |= MediaPlayerEntityFeature(raw) & _PASSTHROUGH_FEATURES
+        if self.source_list:
+            features |= MediaPlayerEntityFeature.SELECT_SOURCE
         return features
+
+    @property
+    def source_list(self) -> list[str] | None:
+        """Hardware inputs on the WiiM (Line In, Network, …)."""
+        state = self._input_state()
+        if state is None:
+            return None
+        raw = state.attributes.get("source_list") or []
+        if not isinstance(raw, list):
+            return None
+        names = [item for item in raw if isinstance(item, str) and item.strip()]
+        return names or None
+
+    @property
+    def source(self) -> str | None:
+        state = self._input_state()
+        if state is None:
+            return None
+        current = state.attributes.get("source")
+        return current if isinstance(current, str) and current else None
+
+    async def async_select_source(self, source: str) -> None:
+        """Switch the WiiM hardware input (shared by every room on this feed)."""
+        await self._async_call(
+            "select_source",
+            self._input_id,
+            {"source": source},
+        )
 
     @property
     def volume_level(self) -> float | None:
@@ -533,7 +713,6 @@ class AmpZoneFacade(MediaPlayerEntity):
         """Power zone on; join existing session or start a solo session."""
         if not self.entity_id:
             return
-        await self.async_power_zone_on()
         if self._session.leader_id and self._session.leader_id != self.entity_id:
             await self._session.async_join(
                 self._session.leader_id, [self.entity_id]
@@ -662,11 +841,11 @@ class AmpZoneFacade(MediaPlayerEntity):
 
     @property
     def media_content_type(self) -> MediaType | str | None:
-        return self._playback_attr("media_content_type")
+        return self._session_media_attr("media_content_type")
 
     @property
     def media_content_id(self) -> str | None:
-        return self._playback_attr("media_content_id")
+        return self._session_media_attr("media_content_id")
 
     @property
     def media_title(self) -> str | None:
@@ -700,15 +879,15 @@ class AmpZoneFacade(MediaPlayerEntity):
 
     @property
     def media_duration(self) -> int | None:
-        return self._playback_attr("media_duration")
+        return self._session_media_attr("media_duration")
 
     @property
     def media_position(self) -> int | None:
-        return self._playback_attr("media_position")
+        return self._session_media_attr("media_position")
 
     @property
     def media_position_updated_at(self):
-        return self._playback_attr("media_position_updated_at")
+        return self._session_media_attr("media_position_updated_at")
 
     @property
     def extra_state_attributes(self) -> dict[str, Any]:
@@ -716,6 +895,7 @@ class AmpZoneFacade(MediaPlayerEntity):
             "zone_entity_id": self._zone_id,
             "decoder_entity_id": self._decoder_id,
             "playback_entity_id": self._playback_id,
+            "input_entity_id": self._input_id,
             "zone_kind": self._zone_kind,
             "on_source": self._source_name,
             "digital_sound_mode": self._digital_sound_mode,

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import logging
 from collections.abc import Callable
 from typing import TYPE_CHECKING
@@ -29,13 +30,36 @@ class AmpSession:
         self._members: list[str] = []  # facade entity_ids, leader first
         self._facades: dict[str, AmpZoneFacade] = {}
         self._listeners: list[Callable[[], None]] = []
+        self._lock = asyncio.Lock()
+        self._expected = 0
+        self._registered = 0
+        self._restored = False
+
+    def expect(self, count: int) -> None:
+        """How many facades this entry will register (used once for restore)."""
+        self._expected = count
 
     def register(self, facade: AmpZoneFacade) -> None:
         """Register a facade once its entity_id is known."""
         if not facade.entity_id:
             _LOGGER.error("Cannot register facade without entity_id")
             return
+        stale = [
+            entity_id
+            for entity_id, existing in self._facades.items()
+            if existing is facade and entity_id != facade.entity_id
+        ]
+        for entity_id in stale:
+            self._rekey_locked(entity_id, facade.entity_id)
         self._facades[facade.entity_id] = facade
+        self._registered += 1
+        if (
+            not self._restored
+            and self._expected
+            and self._registered >= self._expected
+        ):
+            self._restored = True
+            self.hass.async_create_task(self.async_restore_from_zones())
 
     def unregister(self, facade: AmpZoneFacade) -> None:
         entity_id = facade.entity_id
@@ -90,15 +114,72 @@ class AmpSession:
     def known_facade_ids(self) -> set[str]:
         return set(self._facades)
 
+    def digital_zone_ids(self, *, extra: str | None = None) -> list[str]:
+        """Backend zone ids for digital members, plus ``extra`` if given."""
+        zone_ids: list[str] = []
+        for entity_id in self._members:
+            facade = self._facades.get(entity_id)
+            if (
+                facade is not None
+                and facade.is_digital
+                and facade.zone_entity_id not in zone_ids
+            ):
+                zone_ids.append(facade.zone_entity_id)
+        if extra and extra not in zone_ids:
+            zone_ids.append(extra)
+        return zone_ids
+
+    async def async_rekey(self, old_id: str, new_id: str) -> None:
+        """Point session membership at a facade entity id renamed in the UI."""
+        if not old_id or not new_id or old_id == new_id:
+            return
+        async with self._lock:
+            self._rekey_locked(old_id, new_id)
+
+    def _rekey_locked(self, old_id: str, new_id: str) -> None:
+        facade = self._facades.pop(old_id, None)
+        if facade is None:
+            return
+        self._facades[new_id] = facade
+        self._members = [new_id if member == old_id else member for member in self._members]
+        if self.leader_id == old_id:
+            self.leader_id = new_id
+        self.async_notify()
+
+    async def async_restore_from_zones(self) -> None:
+        """Adopt zones that are already on, or receivers still in the SyncGroup."""
+        async with self._lock:
+            if self._members:
+                return
+            adopted: list[str] = []
+            for entity_id, facade in self._facades.items():
+                if facade.adopt_existing_activity():
+                    adopted.append(entity_id)
+            if not adopted:
+                return
+            self._members = adopted
+            self.leader_id = adopted[0]
+            _LOGGER.info(
+                "Restored session from zone state: leader=%s members=%s",
+                self.leader_id,
+                self._members,
+            )
+            self.async_notify()
+
     async def async_ensure_leader(self, facade_entity_id: str) -> None:
         """Make this facade the session leader and a member (zone on)."""
+        async with self._lock:
+            await self._ensure_leader_locked(facade_entity_id)
+
+    async def _ensure_leader_locked(self, facade_entity_id: str) -> None:
         facade = self._facades.get(facade_entity_id)
         if facade is None:
             _LOGGER.warning(
                 "ensure_leader ignored — unknown facade %s", facade_entity_id
             )
             return
-        await facade.async_power_zone_on()
+        if not await facade.async_power_zone_on():
+            return
         if facade_entity_id not in self._members:
             if self.leader_id and self.leader_id in self._members:
                 # Insert as new leader, keep existing members.
@@ -120,6 +201,12 @@ class AmpSession:
     async def async_join(
         self, leader_entity_id: str, group_members: list[str]
     ) -> None:
+        async with self._lock:
+            await self._join_locked(leader_entity_id, group_members)
+
+    async def _join_locked(
+        self, leader_entity_id: str, group_members: list[str]
+    ) -> None:
         """
         Add group_members to the session with leader as coordinator.
 
@@ -132,7 +219,11 @@ class AmpSession:
             _LOGGER.warning("Join ignored — unknown leader %s", leader_entity_id)
             return
 
-        await leader.async_power_zone_on()
+        if not await leader.async_power_zone_on():
+            _LOGGER.warning(
+                "Join ignored — %s did not power on", leader_entity_id
+            )
+            return
 
         # Start from current session (leader first), then add newcomers.
         members: list[str] = []
@@ -166,11 +257,16 @@ class AmpSession:
                 continue
             member = self._facades[entity_id]
             try:
-                await member.async_power_zone_on()
+                powered = await member.async_power_zone_on()
             except Exception:
                 _LOGGER.exception(
                     "Join: failed to power on %s — leaving it out of the group",
                     entity_id,
+                )
+                continue
+            if not powered:
+                _LOGGER.warning(
+                    "Join skipped %s — zone did not turn on", entity_id
                 )
                 continue
             members.append(entity_id)
@@ -184,16 +280,16 @@ class AmpSession:
 
     async def async_unjoin(self, facade_entity_id: str) -> None:
         """Remove a facade from the session and power its zone off."""
-        facade = self._facades.get(facade_entity_id)
-        if facade is not None:
-            try:
-                await facade.async_power_zone_off()
-            except Exception:
-                _LOGGER.exception(
-                    "Unjoin: failed to power off zone for %s", facade_entity_id
-                )
-
-        await self.async_drop_member(facade_entity_id)
+        async with self._lock:
+            facade = self._facades.get(facade_entity_id)
+            if facade is not None:
+                try:
+                    await facade.async_power_zone_off()
+                except Exception:
+                    _LOGGER.exception(
+                        "Unjoin: failed to power off zone for %s", facade_entity_id
+                    )
+            self._drop_member_locked(facade_entity_id)
 
     async def async_drop_member(self, facade_entity_id: str) -> None:
         """Remove a facade from the session without touching the zone player.
@@ -201,6 +297,10 @@ class AmpSession:
         Used when a digital receiver already left the decoder SyncGroup
         (e.g. Control4 took the STR for TV).
         """
+        async with self._lock:
+            self._drop_member_locked(facade_entity_id)
+
+    def _drop_member_locked(self, facade_entity_id: str) -> None:
         if facade_entity_id not in self._members:
             self.async_notify()
             return
