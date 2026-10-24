@@ -2,6 +2,15 @@
 
 
 
+
+## 1.2.5 - 2026-10-24
+
+- - Serialize session joins so overlapping Music Assistant updates cannot drop a room.
+- Digital joins include every receiver already in the session, and a failed or unconfirmed SyncGroup join is removed.
+- Amp zones turned off outside the integration leave the session. Startup restores zones that are already on.
+- Facade source selects the native WiiM input (Line In, Network, and the rest). Media metadata is hidden while a zone is off.
+- Renamed facade entity ids stay in the session. Digital-zone picker rejects Amp Zone facades and their Music Assistant mirrors.
+
 ## 1.2.4 - 2026-10-21
 
 - - Stop rewriting facade entity registry entries on load. The short name is set on the entity; names and entity ids changed in the Home Assistant UI are kept across restart and reload.
