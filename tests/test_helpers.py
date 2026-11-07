@@ -17,6 +17,8 @@ from helpers import (  # noqa: E402
     normalize_sound_mode,
     normalize_source,
     normalize_zones,
+    resolve_sound_mode_entity,
+    sound_mode_entity_candidates,
     source_form_value,
     wiim_native_unique_id,
 )
@@ -47,6 +49,34 @@ def test_normalize_playback():
 def test_normalize_sound_mode():
     assert normalize_sound_mode(None) == ""
     assert normalize_sound_mode("  Multi Stereo  ") == "Multi Stereo"
+
+
+def test_sound_mode_entity_candidates():
+    assert sound_mode_entity_candidates("media_player.theater_str") == [
+        "media_player.theater_str",
+        "media_player.theater_receiver",
+    ]
+    assert sound_mode_entity_candidates("media_player.living_room_str") == [
+        "media_player.living_room_str",
+        "media_player.living_room_receiver",
+    ]
+    assert sound_mode_entity_candidates("media_player.den") == [
+        "media_player.den",
+        "media_player.den_receiver",
+    ]
+
+
+def test_resolve_sound_mode_entity_prefers_receiver():
+    zone = "media_player.theater_str"
+    receiver = "media_player.theater_receiver"
+    lists = {
+        zone: None,
+        receiver: ["2ch Stereo", "Multi Stereo", "Dolby Mode"],
+    }
+    assert (
+        resolve_sound_mode_entity(zone, "Multi Stereo", lists) == receiver
+    )
+    assert resolve_sound_mode_entity(zone, "Multi Stereo", {zone: None}) == zone
 
 
 def test_source_form_value():

@@ -93,7 +93,7 @@ You play on Bar Speakers (facade)
 - **WiiM input** — facade source list follows the native WiiM (Line In, Network, …) when the decoder is the Music Assistant player
 - After a restart, zones that are already on (and receivers still in the SyncGroup) come back as session members
 - Optional `select_source` when an amp zone turns on (exact name from the zone `source_list`)
-- Optional sound mode when a digital zone joins (if the player exposes `select_sound_mode`)
+- Optional sound mode when a digital zone joins — applied to a Songpal/AVR `*_receiver` sibling when the MA AirPlay/Cast player has no `sound_mode_list`
 - Per-zone volume; leaving a room does not stop the queue for others
 - Short facade names (`Bar Speakers`, `Theater Speakers`) from amp / receiver labels
 - Zone picker: Control4 Audio **speaker** zones, plus matrix zones from Monoprice, Russound, Yamaha, Onkyo, Denon, etc.
@@ -140,7 +140,7 @@ Copy `custom_components/amp_zone_player` into `config/custom_components/`, resta
 1. **Decoder** — Prefer the **Music Assistant** WiiM player (`media_player.wiim_pro_ma_decoder`). Needed for digital join. Analog out still feeds the amp. Keep the native WiiM entity as `media_player.wiim_pro` (do not use it as Decoder when you have digital zones).
 2. **Amp zones** — matrix room players (Control4 Audio names must include “Speakers”; bare Amp/Switch players are hidden)
 3. **Digital receivers (optional)** — MA players for Sonys / other syncable endpoints (e.g. `Theater STR`, `Living Room STR`)
-4. **Digital sound mode (optional)** — exact `sound_mode` string if the player supports it (often blank for Sonys in HA)
+4. **Digital sound mode (optional)** — exact `sound_mode` string (e.g. `Multi Stereo`). Applied to `media_player.<room>_receiver` when the digital MA player is `media_player.<room>_str`
 5. **Queue / SyncGroup player (optional)** — leave empty unless you want a dedicated SyncGroup as the queue owner
 6. **Amp input / source** — plain-text name from the amp zone source list (e.g. `WiiM Pro`), or **None**
 7. **Name prefix** — usually blank

@@ -41,6 +41,50 @@ def normalize_sound_mode(value: str | None) -> str:
     return (value or "").strip()
 
 
+def sound_mode_entity_candidates(zone_id: str) -> list[str]:
+    """Ordered media_player ids to try for select_sound_mode on a digital zone.
+
+    MA AirPlay/Cast proxies (``*_str``, ``*_ma``, …) often lack sound modes; the
+    Songpal/AVR ``*_receiver`` sibling usually has them.
+    """
+    if not zone_id or "." not in zone_id:
+        return []
+    domain, object_id = zone_id.split(".", 1)
+    candidates = [zone_id]
+    for suffix in ("_str", "_ma", "_airplay", "_cast"):
+        if object_id.endswith(suffix):
+            base = object_id[: -len(suffix)]
+            if base:
+                candidates.append(f"{domain}.{base}_receiver")
+            break
+    else:
+        candidates.append(f"{domain}.{object_id}_receiver")
+    out: list[str] = []
+    for entity_id in candidates:
+        if entity_id and entity_id not in out:
+            out.append(entity_id)
+    return out
+
+
+def resolve_sound_mode_entity(
+    zone_id: str,
+    sound_mode: str,
+    sound_mode_lists: dict[str, list[str] | None],
+) -> str:
+    """Pick the entity that can apply ``sound_mode`` (prefer exact list match)."""
+    candidates = sound_mode_entity_candidates(zone_id)
+    fallback = zone_id
+    for entity_id in candidates:
+        modes = sound_mode_lists.get(entity_id)
+        if not modes:
+            continue
+        if sound_mode in modes:
+            return entity_id
+        if fallback == zone_id and entity_id != zone_id:
+            fallback = entity_id
+    return fallback
+
+
 def source_form_value(stored: str | None) -> str:
     """Select option value for a previously saved source."""
     raw = (stored or "").strip()

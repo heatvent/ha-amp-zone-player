@@ -1,7 +1,9 @@
 # Changelog
 
+## 1.2.6 - 2026-11-07
 
-
+- Digital sound mode targets a Songpal/AVR `*_receiver` sibling when the MA AirPlay/Cast zone has no `sound_mode_list` (e.g. `theater_str` → `theater_receiver` for Multi Stereo).
+- Amp zones are unmuted when they join a session (clears stale dashboard mute).
 
 ## 1.2.5 - 2026-10-24
 

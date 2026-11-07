@@ -59,6 +59,8 @@ from .helpers import (
     STATE_MAP as _STATE_VALUE_MAP,
     digital_zone_in_sync_group,
     normalize_zones,
+    resolve_sound_mode_entity,
+    sound_mode_entity_candidates,
     wiim_native_unique_id,
 )
 from .naming import facade_name
@@ -524,6 +526,24 @@ class AmpZoneFacade(MediaPlayerEntity):
                 raise
             return False
 
+    def _resolve_sound_mode_entity(self) -> str:
+        """Prefer Songpal/AVR receiver over MA AirPlay proxy for sound mode."""
+        mode = self._digital_sound_mode or ""
+        lists: dict[str, list[str] | None] = {}
+        for entity_id in sound_mode_entity_candidates(self._zone_id):
+            state = self.hass.states.get(entity_id)
+            if state is None:
+                lists[entity_id] = None
+            else:
+                modes = state.attributes.get("sound_mode_list")
+                lists[entity_id] = list(modes) if modes else None
+        target = resolve_sound_mode_entity(self._zone_id, mode, lists)
+        if target != self._zone_id:
+            _LOGGER.debug(
+                "Sound mode %r for %s → %s", mode, self._zone_id, target
+            )
+        return target
+
     async def async_power_zone_on(self) -> bool:
         """Turn amp zone on, or join digital receiver to the WiiM / decoder.
 
@@ -534,9 +554,10 @@ class AmpZoneFacade(MediaPlayerEntity):
             self._digital_join_pending = False
             await self._async_call(SERVICE_TURN_ON, self._zone_id, critical=False)
             if self._digital_sound_mode:
+                sound_target = self._resolve_sound_mode_entity()
                 await self._async_call(
                     "select_sound_mode",
-                    self._zone_id,
+                    sound_target,
                     {"sound_mode": self._digital_sound_mode},
                     critical=False,
                 )
@@ -580,6 +601,13 @@ class AmpZoneFacade(MediaPlayerEntity):
                     self._source_name,
                     self._zone_id,
                 )
+        # Dashboard / prior sessions often leave amp zones muted — clear on join.
+        await self._async_call(
+            SERVICE_VOLUME_MUTE,
+            self._zone_id,
+            {ATTR_MEDIA_VOLUME_MUTED: False},
+            critical=False,
+        )
         return True
 
     async def async_power_zone_off(self) -> None:
