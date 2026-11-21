@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from typing import Any
+
 SOURCE_NONE = "__none__"
 
 # HA state string → MediaPlayerState value (STANDBY removed in HA 2026.8).
@@ -202,3 +204,15 @@ def digital_zone_in_sync_group(
     ):
         return True
     return False
+
+
+def startup_volume(zone_id: str, volumes: dict[str, Any] | None) -> float | None:
+    """Volume level (0-1) a zone starts at, or None to leave its volume alone."""
+    raw = volumes.get(zone_id) if isinstance(volumes, dict) else None
+    try:
+        percent = int(round(float(raw)))
+    except (TypeError, ValueError):
+        return None
+    if not 1 <= percent <= 100:
+        return None
+    return percent / 100

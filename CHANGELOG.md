@@ -1,5 +1,9 @@
 # Changelog
 
+## 1.2.9 - 2026-11-21
+
+- Startup volume per zone: Configure has a new last step to give each amp zone and receiver the volume it starts at when it is turned on for music. A zone that is already on, or a receiver already in the SyncGroup, keeps its current volume. Blank leaves the zone alone (amp zones then use the amp's own turn-on volume).
+
 ## 1.2.8 - 2026-11-21
 
 - Joining a room sends only what it still needs: an amp zone that is already on, on the decoder input and unmuted gets no commands, and a receiver already in the decoder SyncGroup is not re-joined (no stream restart, no sound mode re-send). Whole-home joins finish sooner.

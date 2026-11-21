@@ -21,6 +21,7 @@ from .const import (
     CONF_NAME_PREFIX,
     CONF_PLAYBACK,
     CONF_SOURCE,
+    CONF_STARTUP_VOLUMES,
     CONF_ZONES,
     DEFAULT_NAME_PREFIX,
     DOMAIN,
@@ -559,18 +560,23 @@ class AmpZonePlayerOptionsFlow(config_entries.OptionsFlow):
     async def _async_finish(
         self, new_data: dict[str, Any], unique_id: str
     ) -> config_entries.ConfigFlowResult:
-        """Carry per-receiver sound modes over, then ask for them if any receivers."""
+        """Carry per-zone settings over, then ask for sound modes and volumes."""
         digital = new_data.get(CONF_DIGITAL_ZONES) or []
-        old = self.config_entry.data.get(CONF_DIGITAL_SOUND_MODES)
-        new_data[CONF_DIGITAL_SOUND_MODES] = {
-            zone: mode
-            for zone, mode in (old if isinstance(old, dict) else {}).items()
-            if zone in digital
-        }
+        everything = [*(new_data.get(CONF_ZONES) or []), *digital]
+        for key, keep in (
+            (CONF_DIGITAL_SOUND_MODES, digital),
+            (CONF_STARTUP_VOLUMES, everything),
+        ):
+            old = self.config_entry.data.get(key)
+            new_data[key] = {
+                zone: value
+                for zone, value in (old if isinstance(old, dict) else {}).items()
+                if zone in keep
+            }
         self._final = (new_data, unique_id)
         if digital:
             return await self.async_step_sound_modes()
-        return self._save()
+        return await self.async_step_volumes()
 
     def _save(self) -> config_entries.ConfigFlowResult:
         # Keep config in entry.data (not options) and refresh unique_id.
@@ -593,7 +599,7 @@ class AmpZonePlayerOptionsFlow(config_entries.OptionsFlow):
                 if (value := _normalize_sound_mode(user_input.get(zone)))
                 and value != _SOUND_MODE_DEFAULT
             }
-            return self._save()
+            return await self.async_step_volumes()
 
         current = data.get(CONF_DIGITAL_SOUND_MODES) or {}
         schema: dict[Any, Any] = {}
@@ -630,4 +636,48 @@ class AmpZonePlayerOptionsFlow(config_entries.OptionsFlow):
                 or "none",
                 "receivers": "\n".join(names),
             },
+        )
+
+    async def async_step_volumes(
+        self, user_input: dict[str, Any] | None = None
+    ) -> config_entries.ConfigFlowResult:
+        """Optional startup volume per zone (blank: leave its volume alone)."""
+        data, _unique_id = self._final
+        zones = [*(data.get(CONF_ZONES) or []), *(data.get(CONF_DIGITAL_ZONES) or [])]
+        if user_input is not None:
+            volumes: dict[str, int] = {}
+            for zone in zones:
+                value = user_input.get(zone)
+                if value in (None, ""):
+                    continue
+                percent = int(round(float(value)))
+                if 1 <= percent <= 100:
+                    volumes[zone] = percent
+            data[CONF_STARTUP_VOLUMES] = volumes
+            return self._save()
+
+        current = data.get(CONF_STARTUP_VOLUMES) or {}
+        schema: dict[Any, Any] = {}
+        names: list[str] = []
+        for zone in zones:
+            key = (
+                vol.Optional(zone, description={"suggested_value": current[zone]})
+                if zone in current
+                else vol.Optional(zone)
+            )
+            schema[key] = selector.NumberSelector(
+                selector.NumberSelectorConfig(
+                    min=1,
+                    max=100,
+                    step=1,
+                    unit_of_measurement="%",
+                    mode=selector.NumberSelectorMode.BOX,
+                )
+            )
+            state = self.hass.states.get(zone)
+            names.append(f"- `{zone}`: {state.name if state else zone}")
+        return self.async_show_form(
+            step_id="volumes",
+            data_schema=vol.Schema(schema),
+            description_placeholders={"zones": "\n".join(names)},
         )
