@@ -29,7 +29,6 @@ from homeassistant.const import (
     SERVICE_VOLUME_MUTE,
     SERVICE_VOLUME_SET,
     STATE_OFF,
-    STATE_ON,
     STATE_PLAYING,
     STATE_PAUSED,
     STATE_UNAVAILABLE,
