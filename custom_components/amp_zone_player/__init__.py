@@ -4,12 +4,13 @@ from __future__ import annotations
 
 import voluptuous as vol
 
-from homeassistant.config_entries import ConfigEntry
+from homeassistant.config_entries import ConfigEntry, ConfigEntryState
 from homeassistant.const import Platform
 from homeassistant.core import HomeAssistant, ServiceCall
 from homeassistant.exceptions import HomeAssistantError
 from homeassistant.helpers import config_validation as cv
 from homeassistant.helpers.start import async_at_started
+from homeassistant.helpers.typing import ConfigType
 
 from .const import DOMAIN, PLATFORMS
 from .repairs import async_check_source_issue
@@ -17,6 +18,8 @@ from .repairs import async_check_source_issue
 SERVICE_TURN_ALL_ZONES_ON = "turn_all_zones_on"
 SERVICE_TURN_ALL_ZONES_OFF = "turn_all_zones_off"
 ATTR_CONFIG_ENTRY_ID = "config_entry_id"
+
+CONFIG_SCHEMA = cv.config_entry_only_config_schema(DOMAIN)
 
 _SERVICE_SCHEMA = vol.Schema(
     {
@@ -33,7 +36,14 @@ def _async_register_services(hass: HomeAssistant) -> None:
 
     async def _async_turn_all(call: ServiceCall, *, turn_on: bool) -> None:
         entry_id = call.data[ATTR_CONFIG_ENTRY_ID]
-        session = hass.data.get(DOMAIN, {}).get(entry_id)
+        entry = hass.config_entries.async_get_entry(entry_id)
+        session = (
+            getattr(entry, "runtime_data", None)
+            if entry is not None
+            and entry.domain == DOMAIN
+            and entry.state is ConfigEntryState.LOADED
+            else None
+        )
         if session is None:
             raise HomeAssistantError(
                 f"No Amp Zone Player session for config entry {entry_id}"
@@ -70,10 +80,16 @@ def _async_register_services(hass: HomeAssistant) -> None:
     )
 
 
+async def async_setup(hass: HomeAssistant, config: ConfigType) -> bool:
+    """Register services once, so automations validate even before an entry loads."""
+    _async_register_services(hass)
+    return True
+
+
 async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     """Set up Music Assistant Amp Zone Player from a config entry."""
-    hass.data.setdefault(DOMAIN, {})
-    _async_register_services(hass)
+    # media_player sets the session; stays None when zones/decoder are not configured.
+    entry.runtime_data = None
     await hass.config_entries.async_forward_entry_setups(
         entry, [Platform(p) for p in PLATFORMS]
     )
@@ -89,12 +105,9 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
 
 async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     """Unload a config entry."""
-    unload_ok = await hass.config_entries.async_unload_platforms(
+    return await hass.config_entries.async_unload_platforms(
         entry, [Platform(p) for p in PLATFORMS]
     )
-    if unload_ok:
-        hass.data[DOMAIN].pop(entry.entry_id, None)
-    return unload_ok
 
 
 async def _async_update_listener(hass: HomeAssistant, entry: ConfigEntry) -> None:
