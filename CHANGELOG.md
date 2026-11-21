@@ -1,5 +1,12 @@
 # Changelog
 
+## 1.2.8 - 2026-11-21
+
+- Joining a room sends only what it still needs: an amp zone that is already on, on the decoder input and unmuted gets no commands, and a receiver already in the decoder SyncGroup is not re-joined (no stream restart, no sound mode re-send). Whole-home joins finish sooner.
+- Sound mode per receiver: Configure has a new step to pick each receiver's mode, "Use the default", or "Don't change it". A mode the receiver does not list is skipped instead of failing.
+- Facades default to their room's area (the amp zone's area, or the AVR receiver's for digital zones). An area you set yourself is kept.
+- Tests now run the facade code in Home Assistant's test harness.
+
 ## 1.2.7 - 2026-11-21
 
 - Services are registered at startup, so automations validate before an entry loads; they still error for an unknown or unloaded entry

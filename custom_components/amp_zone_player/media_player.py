@@ -36,6 +36,7 @@ from homeassistant.const import (
 )
 from homeassistant.core import Event, HomeAssistant, State, callback
 from homeassistant.exceptions import HomeAssistantError
+from homeassistant.helpers import device_registry as dr
 from homeassistant.helpers import entity_registry as er
 from homeassistant.helpers.device_registry import DeviceInfo
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
@@ -45,6 +46,7 @@ from homeassistant.helpers.event import async_track_state_change_event
 from .const import (
     CONF_DECODER,
     CONF_DIGITAL_SOUND_MODE,
+    CONF_DIGITAL_SOUND_MODES,
     CONF_DIGITAL_ZONES,
     CONF_NAME_PREFIX,
     CONF_PLAYBACK,
@@ -56,7 +58,9 @@ from .const import (
 )
 from .helpers import (
     STATE_MAP as _STATE_VALUE_MAP,
+    area_for_facade,
     digital_zone_in_sync_group,
+    effective_sound_mode,
     normalize_zones,
     resolve_sound_mode_entity,
     sound_mode_entity_candidates,
@@ -119,6 +123,9 @@ async def async_setup_entry(
     source = (config.get(CONF_SOURCE) or "").strip() or None
     prefix = (config.get(CONF_NAME_PREFIX) or "").strip()
     sound_mode = (config.get(CONF_DIGITAL_SOUND_MODE) or "").strip() or None
+    sound_modes = config.get(CONF_DIGITAL_SOUND_MODES)
+    if not isinstance(sound_modes, dict):
+        sound_modes = {}
     playback = (config.get(CONF_PLAYBACK) or "").strip() or None
     if playback == decoder:
         playback = None
@@ -173,7 +180,7 @@ async def async_setup_entry(
             source_name=None,
             name_prefix=prefix,
             zone_kind=ZONE_KIND_DIGITAL,
-            digital_sound_mode=sound_mode,
+            digital_sound_mode=effective_sound_mode(zone_id, sound_mode, sound_modes),
         )
         for zone_id in digital_zones
     )
@@ -365,8 +372,38 @@ class AmpZoneFacade(MediaPlayerEntity):
         )
         await self._session.async_drop_member(self.entity_id)
 
+    def _entity_area(self, entity_id: str) -> str | None:
+        """Area of an entity: its own, else its device's."""
+        entry = er.async_get(self.hass).async_get(entity_id)
+        if entry is None:
+            return None
+        if entry.area_id:
+            return entry.area_id
+        if entry.device_id:
+            device = dr.async_get(self.hass).async_get(entry.device_id)
+            if device is not None:
+                return device.area_id
+        return None
+
+    @callback
+    def _adopt_room_area(self) -> None:
+        """Default this facade's area to the room it drives (never overrides)."""
+        registry = er.async_get(self.hass)
+        own = registry.async_get(self.entity_id) if self.entity_id else None
+        if own is None or own.area_id:
+            return
+        candidates = [self._zone_id, *sound_mode_entity_candidates(self._zone_id)]
+        area = area_for_facade(
+            self._zone_kind,
+            self._zone_id,
+            {entity_id: self._entity_area(entity_id) for entity_id in candidates},
+        )
+        if area:
+            registry.async_update_entity(own.entity_id, area_id=area)
+
     async def async_added_to_hass(self) -> None:
         self._input_id = self._resolve_input_entity_id()
+        self._adopt_room_area()
         self._session.register(self)
         self.async_on_remove(lambda: self._session.unregister(self))
         self.async_on_remove(
@@ -524,8 +561,12 @@ class AmpZoneFacade(MediaPlayerEntity):
                 raise
             return False
 
-    def _resolve_sound_mode_entity(self) -> str:
-        """Prefer Songpal/AVR receiver over MA AirPlay proxy for sound mode."""
+    def _resolve_sound_mode_entity(self) -> str | None:
+        """Prefer Songpal/AVR receiver over MA AirPlay proxy for sound mode.
+
+        None when the receiver lists its modes and the configured one is not
+        among them (the call would only fail).
+        """
         mode = self._digital_sound_mode or ""
         lists: dict[str, list[str] | None] = {}
         for entity_id in sound_mode_entity_candidates(self._zone_id):
@@ -536,7 +577,13 @@ class AmpZoneFacade(MediaPlayerEntity):
                 modes = state.attributes.get("sound_mode_list")
                 lists[entity_id] = list(modes) if modes else None
         target = resolve_sound_mode_entity(self._zone_id, mode, lists)
-        if target != self._zone_id:
+        if target is None:
+            _LOGGER.debug(
+                "Sound mode %r is not offered for %s — leaving it unchanged",
+                mode,
+                self._zone_id,
+            )
+        elif target != self._zone_id:
             _LOGGER.debug(
                 "Sound mode %r for %s → %s", mode, self._zone_id, target
             )
@@ -548,17 +595,24 @@ class AmpZoneFacade(MediaPlayerEntity):
         Returns False when a digital receiver did not join the SyncGroup.
         """
         if self.is_digital:
+            if self._digital_in_sync_group():
+                # Already hearing the decoder: re-joining would only restart the
+                # receiver's stream and re-send its sound mode.
+                self._digital_seen_in_sync = True
+                self._digital_join_pending = False
+                return True
             self._digital_seen_in_sync = False
             self._digital_join_pending = False
             await self._async_call(SERVICE_TURN_ON, self._zone_id, critical=False)
             if self._digital_sound_mode:
                 sound_target = self._resolve_sound_mode_entity()
-                await self._async_call(
-                    "select_sound_mode",
-                    sound_target,
-                    {"sound_mode": self._digital_sound_mode},
-                    critical=False,
-                )
+                if sound_target is not None:
+                    await self._async_call(
+                        "select_sound_mode",
+                        sound_target,
+                        {"sound_mode": self._digital_sound_mode},
+                        critical=False,
+                    )
             group = self._session.digital_zone_ids(extra=self._zone_id)
             # Join the MA/AirPlay receiver onto the decoder (WiiM) SyncGroup.
             ok = await self._async_call(
@@ -584,8 +638,14 @@ class AmpZoneFacade(MediaPlayerEntity):
             self._schedule_join_confirm()
             return True
 
-        await self._async_call(SERVICE_TURN_ON, self._zone_id, critical=True)
-        if self._source_name:
+        # Each call below is a round trip to an amp that may handle one command
+        # at a time, so only send what the zone's current state still needs.
+        if not _is_on_state(self._zone()):
+            await self._async_call(SERVICE_TURN_ON, self._zone_id, critical=True)
+        zone = self._zone()
+        if self._source_name and (
+            zone is None or zone.attributes.get("source") != self._source_name
+        ):
             # Wrong/missing source name must not abort join/play.
             ok = await self._async_call(
                 "select_source",
@@ -600,12 +660,14 @@ class AmpZoneFacade(MediaPlayerEntity):
                     self._zone_id,
                 )
         # Dashboard / prior sessions often leave amp zones muted — clear on join.
-        await self._async_call(
-            SERVICE_VOLUME_MUTE,
-            self._zone_id,
-            {ATTR_MEDIA_VOLUME_MUTED: False},
-            critical=False,
-        )
+        zone = self._zone()
+        if zone is None or zone.attributes.get(ATTR_MEDIA_VOLUME_MUTED) is not False:
+            await self._async_call(
+                SERVICE_VOLUME_MUTE,
+                self._zone_id,
+                {ATTR_MEDIA_VOLUME_MUTED: False},
+                critical=False,
+            )
         return True
 
     async def async_power_zone_off(self) -> None:

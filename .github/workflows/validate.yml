@@ -50,7 +50,7 @@ jobs:
           python-version: "3.14"
 
       - name: Install test dependencies
-        run: pip install pytest
+        run: pip install pytest-homeassistant-custom-component
 
       - name: Run tests
         run: python -m pytest -q

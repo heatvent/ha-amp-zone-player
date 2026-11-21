@@ -143,3 +143,33 @@ def test_wiim_native_unique_id():
     )
     assert wiim_native_unique_id("not-a-wiim") is None
     assert wiim_native_unique_id(None) is None
+
+
+def test_resolve_sound_mode_entity_skips_unsupported_mode():
+    from helpers import resolve_sound_mode_entity
+
+    zone = "media_player.living_room_str"
+    receiver = "media_player.living_room_receiver"
+    # The receiver lists its modes and Multi Stereo is not one of them.
+    assert resolve_sound_mode_entity(zone, "Multi Stereo", {zone: None, receiver: ["2ch Stereo"]}) is None
+
+
+def test_effective_sound_mode():
+    from helpers import SOUND_MODE_KEEP, effective_sound_mode
+
+    zone = "media_player.theater_str"
+    assert effective_sound_mode(zone, "Multi Stereo", None) == "Multi Stereo"
+    assert effective_sound_mode(zone, "Multi Stereo", {zone: "Direct"}) == "Direct"
+    assert effective_sound_mode(zone, "Multi Stereo", {zone: SOUND_MODE_KEEP}) is None
+    assert effective_sound_mode(zone, "Multi Stereo", {zone: "  "}) == "Multi Stereo"
+    assert effective_sound_mode(zone, "", {}) is None
+
+
+def test_area_for_facade():
+    from helpers import area_for_facade
+
+    assert area_for_facade("amp", "media_player.amp_kitchen", {"media_player.amp_kitchen": "kitchen"}) == "kitchen"
+    areas = {"media_player.theater_str": "media_closet", "media_player.theater_receiver": "theater"}
+    assert area_for_facade("digital", "media_player.theater_str", areas) == "theater"
+    # A digital zone never takes the MA proxy's area.
+    assert area_for_facade("digital", "media_player.theater_str", {"media_player.theater_str": "media_closet"}) is None

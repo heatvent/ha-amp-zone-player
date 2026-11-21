@@ -16,6 +16,7 @@ from homeassistant.helpers import selector
 from .const import (
     CONF_DECODER,
     CONF_DIGITAL_SOUND_MODE,
+    CONF_DIGITAL_SOUND_MODES,
     CONF_DIGITAL_ZONES,
     CONF_NAME_PREFIX,
     CONF_PLAYBACK,
@@ -25,12 +26,14 @@ from .const import (
     DOMAIN,
 )
 from .helpers import (
+    SOUND_MODE_KEEP,
     SOURCE_NONE,
     entry_unique_id as _entry_unique_id,
     normalize_playback as _normalize_playback,
     normalize_sound_mode as _normalize_sound_mode,
     normalize_source as _normalize_source,
     normalize_zones as _normalize_zones,
+    sound_mode_entity_candidates,
     source_form_value as _source_form_value,
 )
 
@@ -343,6 +346,10 @@ def _options_schema(hass: HomeAssistant, data: dict[str, Any]) -> vol.Schema:
     return vol.Schema(schema)
 
 
+# Per-receiver choice meaning "use the entry-wide sound mode".
+_SOUND_MODE_DEFAULT = "__default__"
+
+
 class AmpZonePlayerConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
     """Handle a config flow for Music Assistant Amp Zone Player."""
 
@@ -509,13 +516,7 @@ class AmpZonePlayerOptionsFlow(config_entries.OptionsFlow):
                         CONF_NAME_PREFIX: self._partial[CONF_NAME_PREFIX],
                         CONF_PLAYBACK: self._partial.get(CONF_PLAYBACK, ""),
                     }
-                    self.hass.config_entries.async_update_entry(
-                        self.config_entry,
-                        data=new_data,
-                        options={},
-                        unique_id=new_uid,
-                    )
-                    return self.async_create_entry(data={})
+                    return await self._async_finish(new_data, new_uid)
 
         return self.async_show_form(
             step_id="init",
@@ -542,14 +543,7 @@ class AmpZonePlayerOptionsFlow(config_entries.OptionsFlow):
                 CONF_NAME_PREFIX: self._partial[CONF_NAME_PREFIX],
                 CONF_PLAYBACK: self._partial.get(CONF_PLAYBACK, ""),
             }
-            # Keep config in entry.data (not options) and refresh unique_id.
-            self.hass.config_entries.async_update_entry(
-                self.config_entry,
-                data=new_data,
-                options={},
-                unique_id=self._partial["unique_id"],
-            )
-            return self.async_create_entry(data={})
+            return await self._async_finish(new_data, self._partial["unique_id"])
 
         return self.async_show_form(
             step_id="source",
@@ -559,5 +553,81 @@ class AmpZonePlayerOptionsFlow(config_entries.OptionsFlow):
                     "Choose a name from the zone source list (plain text), "
                     "or type the exact label. This is not an entity ID."
                 )
+            },
+        )
+
+    async def _async_finish(
+        self, new_data: dict[str, Any], unique_id: str
+    ) -> config_entries.ConfigFlowResult:
+        """Carry per-receiver sound modes over, then ask for them if any receivers."""
+        digital = new_data.get(CONF_DIGITAL_ZONES) or []
+        old = self.config_entry.data.get(CONF_DIGITAL_SOUND_MODES)
+        new_data[CONF_DIGITAL_SOUND_MODES] = {
+            zone: mode
+            for zone, mode in (old if isinstance(old, dict) else {}).items()
+            if zone in digital
+        }
+        self._final = (new_data, unique_id)
+        if digital:
+            return await self.async_step_sound_modes()
+        return self._save()
+
+    def _save(self) -> config_entries.ConfigFlowResult:
+        # Keep config in entry.data (not options) and refresh unique_id.
+        data, unique_id = self._final
+        self.hass.config_entries.async_update_entry(
+            self.config_entry, data=data, options={}, unique_id=unique_id
+        )
+        return self.async_create_entry(data={})
+
+    async def async_step_sound_modes(
+        self, user_input: dict[str, Any] | None = None
+    ) -> config_entries.ConfigFlowResult:
+        """Optional sound mode per digital receiver (default: the shared one)."""
+        data, _unique_id = self._final
+        zones: list[str] = data[CONF_DIGITAL_ZONES]
+        if user_input is not None:
+            data[CONF_DIGITAL_SOUND_MODES] = {
+                zone: value
+                for zone in zones
+                if (value := _normalize_sound_mode(user_input.get(zone)))
+                and value != _SOUND_MODE_DEFAULT
+            }
+            return self._save()
+
+        current = data.get(CONF_DIGITAL_SOUND_MODES) or {}
+        schema: dict[Any, Any] = {}
+        names: list[str] = []
+        for zone in zones:
+            choices = [
+                selector.SelectOptionDict(value=_SOUND_MODE_DEFAULT, label="Use the default"),
+                selector.SelectOptionDict(value=SOUND_MODE_KEEP, label="Don't change it"),
+            ]
+            seen: set[str] = set()
+            for entity_id in sound_mode_entity_candidates(zone):
+                state = self.hass.states.get(entity_id)
+                modes = (state.attributes.get("sound_mode_list") or []) if state else []
+                for mode in modes:
+                    if isinstance(mode, str) and mode not in seen:
+                        seen.add(mode)
+                        choices.append(selector.SelectOptionDict(value=mode, label=mode))
+            schema[
+                vol.Optional(zone, default=current.get(zone) or _SOUND_MODE_DEFAULT)
+            ] = selector.SelectSelector(
+                selector.SelectSelectorConfig(
+                    options=choices,
+                    custom_value=True,
+                    mode=selector.SelectSelectorMode.DROPDOWN,
+                )
+            )
+            state = self.hass.states.get(zone)
+            names.append(f"- `{zone}`: {state.name if state else zone}")
+        return self.async_show_form(
+            step_id="sound_modes",
+            data_schema=vol.Schema(schema),
+            description_placeholders={
+                "default": _normalize_sound_mode(data.get(CONF_DIGITAL_SOUND_MODE))
+                or "none",
+                "receivers": "\n".join(names),
             },
         )

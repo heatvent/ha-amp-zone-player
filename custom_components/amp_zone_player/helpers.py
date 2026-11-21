@@ -70,19 +70,65 @@ def resolve_sound_mode_entity(
     zone_id: str,
     sound_mode: str,
     sound_mode_lists: dict[str, list[str] | None],
-) -> str:
-    """Pick the entity that can apply ``sound_mode`` (prefer exact list match)."""
-    candidates = sound_mode_entity_candidates(zone_id)
-    fallback = zone_id
-    for entity_id in candidates:
+) -> str | None:
+    """Pick the entity that can apply ``sound_mode``.
+
+    Returns the first candidate whose sound_mode_list contains the mode. When
+    some candidate publishes a list but none contains the mode, returns None so
+    the caller skips a call that would only fail. With no lists at all (state
+    not loaded yet), falls back to the zone itself.
+    """
+    any_list = False
+    for entity_id in sound_mode_entity_candidates(zone_id):
         modes = sound_mode_lists.get(entity_id)
         if not modes:
             continue
+        any_list = True
         if sound_mode in modes:
             return entity_id
-        if fallback == zone_id and entity_id != zone_id:
-            fallback = entity_id
-    return fallback
+    return None if any_list else zone_id
+
+
+# Per-receiver choice meaning "never change the sound mode on this receiver".
+SOUND_MODE_KEEP = "__keep__"
+
+
+def effective_sound_mode(
+    zone_id: str, default: str | None, per_zone: dict[str, str] | None
+) -> str | None:
+    """Sound mode for one digital zone: its own choice, else the entry default.
+
+    A per-zone value of SOUND_MODE_KEEP means leave this receiver alone; a
+    missing or blank value means use the default.
+    """
+    choice = normalize_sound_mode((per_zone or {}).get(zone_id))
+    if choice == SOUND_MODE_KEEP:
+        return None
+    if choice:
+        return choice
+    return normalize_sound_mode(default) or None
+
+
+def area_for_facade(
+    zone_kind: str,
+    zone_id: str,
+    entity_areas: dict[str, str | None],
+) -> str | None:
+    """Area a facade should default to, from the room it drives.
+
+    Amp zones use their zone player's area. Digital zones use the AVR sibling
+    (``*_receiver``) only: the MA proxy usually sits wherever the streamer was
+    first added (e.g. the media closet), not in the listening room.
+    """
+    if zone_kind == "digital":
+        candidates = [c for c in sound_mode_entity_candidates(zone_id) if c != zone_id]
+    else:
+        candidates = [zone_id]
+    for entity_id in candidates:
+        area = entity_areas.get(entity_id)
+        if area:
+            return area
+    return None
 
 
 def source_form_value(stored: str | None) -> str:
