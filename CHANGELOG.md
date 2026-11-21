@@ -1,5 +1,11 @@
 # Changelog
 
+## 1.2.7 - 2026-11-21
+
+- Services are registered at startup, so automations validate before an entry loads; they still error for an unknown or unloaded entry
+- Session stored on the config entry (`entry.runtime_data`)
+- CI runs the test suite
+
 ## 1.2.6 - 2026-11-07
 
 - Digital sound mode targets a Songpal/AVR `*_receiver` sibling when the MA AirPlay/Cast zone has no `sound_mode_list` (e.g. `theater_str` → `theater_receiver` for Multi Stereo).
