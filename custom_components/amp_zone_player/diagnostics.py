@@ -10,6 +10,8 @@ from homeassistant.core import HomeAssistant
 from .const import (
     CONF_DECODER,
     CONF_DIGITAL_SOUND_MODE,
+    CONF_DIGITAL_OFF_SOUND_MODE,
+    CONF_DIGITAL_POWER_OFF,
     CONF_DIGITAL_SOUND_MODES,
     CONF_STARTUP_VOLUMES,
     CONF_DIGITAL_ZONES,
@@ -81,6 +83,8 @@ async def async_get_config_entry_diagnostics(
             CONF_DIGITAL_SOUND_MODE: sound_mode,
             CONF_DIGITAL_SOUND_MODES: dict(data.get(CONF_DIGITAL_SOUND_MODES) or {}),
             CONF_STARTUP_VOLUMES: dict(data.get(CONF_STARTUP_VOLUMES) or {}),
+            CONF_DIGITAL_POWER_OFF: bool(data.get(CONF_DIGITAL_POWER_OFF)),
+            CONF_DIGITAL_OFF_SOUND_MODE: data.get(CONF_DIGITAL_OFF_SOUND_MODE) or None,
             CONF_SOURCE: source or None,
             CONF_PLAYBACK: playback,
             CONF_NAME_PREFIX: data.get(CONF_NAME_PREFIX) or "",

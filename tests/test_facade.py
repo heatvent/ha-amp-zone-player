@@ -27,6 +27,8 @@ def _facade(
     *,
     sound_mode: str | None = None,
     volume: float | None = None,
+    power_off: bool = False,
+    off_mode: str | None = None,
 ) -> tuple[AmpZoneFacade, list[tuple[str, str, dict[str, Any]]]]:
     entry = MockConfigEntry(domain=DOMAIN, data={})
     entry.add_to_hass(hass)
@@ -42,6 +44,8 @@ def _facade(
         zone_kind=kind,
         digital_sound_mode=sound_mode,
         startup_volume=volume,
+        power_off=power_off,
+        off_sound_mode=off_mode,
     )
     facade.entity_id = "media_player.test_facade"
     calls: list[tuple[str, str, dict[str, Any]]] = []
@@ -149,6 +153,69 @@ async def test_digital_already_synced_keeps_its_volume(hass: HomeAssistant) -> N
     facade, calls = _facade(hass, ZONE_KIND_DIGITAL, STR_ZONE, volume=0.3)
     assert await facade.async_power_zone_on()
     assert calls == []
+
+
+AFD = "Auto Format Decoding for Movie"
+
+
+def _receiver(hass: HomeAssistant, source: str | None) -> None:
+    attrs = {"sound_mode_list": ["Multi Stereo", AFD]}
+    if source is not None:
+        attrs["source"] = source
+    hass.states.async_set(RECEIVER, "on", attrs)
+
+
+async def _turn_off_after_music(hass, facade, joined: str | None, now: str | None):
+    hass.states.async_set(STR_ZONE, "idle", {})
+    _receiver(hass, joined)
+    facade._remember_receiver_source()
+    facade._digital_seen_in_sync = True
+    _receiver(hass, now)
+    await facade.async_power_zone_off()
+
+
+async def test_room_off_turns_its_receiver_off_in_movie_mode(hass: HomeAssistant) -> None:
+    facade, calls = _facade(hass, ZONE_KIND_DIGITAL, STR_ZONE, power_off=True, off_mode=AFD)
+    # Sony keeps reporting the last HDMI input while it plays AirPlay.
+    await _turn_off_after_music(hass, facade, "FIRE TV", "FIRE TV")
+    assert [(c[0], c[1], c[2]) for c in calls] == [
+        ("unjoin", STR_ZONE, {}),
+        ("select_sound_mode", RECEIVER, {"sound_mode": AFD}),
+        ("turn_off", RECEIVER, {}),
+    ]
+
+
+async def test_receiver_switched_to_turntable_stays_on(hass: HomeAssistant) -> None:
+    facade, calls = _facade(hass, ZONE_KIND_DIGITAL, STR_ZONE, power_off=True, off_mode=AFD)
+    await _turn_off_after_music(hass, facade, None, "RETRO HIFI")
+    assert [c[0] for c in calls] == ["unjoin"]
+
+
+async def test_power_off_disabled_only_unjoins(hass: HomeAssistant) -> None:
+    facade, calls = _facade(hass, ZONE_KIND_DIGITAL, STR_ZONE)
+    await _turn_off_after_music(hass, facade, None, None)
+    assert [c[0] for c in calls] == ["unjoin"]
+
+
+@pytest.mark.parametrize(("source", "expected"), [(None, ["unjoin", "turn_off"]), ("FIRE TV", ["unjoin"])])
+async def test_unknown_join_input_turns_off_only_without_an_input(
+    hass: HomeAssistant, source: str | None, expected: list[str]
+) -> None:
+    facade, calls = _facade(hass, ZONE_KIND_DIGITAL, STR_ZONE, power_off=True)
+    hass.states.async_set(STR_ZONE, "idle", {})
+    _receiver(hass, source)
+    facade._digital_seen_in_sync = True
+    await facade.async_power_zone_off()
+    assert [c[0] for c in calls] == expected
+
+
+async def test_receiver_not_in_music_is_left_alone(hass: HomeAssistant) -> None:
+    facade, calls = _facade(hass, ZONE_KIND_DIGITAL, STR_ZONE, power_off=True)
+    hass.states.async_set(DECODER, "idle", {"group_members": []})
+    hass.states.async_set(STR_ZONE, "idle", {})
+    _receiver(hass, None)
+    await facade.async_power_zone_off()
+    assert [c[0] for c in calls] == ["unjoin"]
 
 
 @pytest.mark.parametrize(

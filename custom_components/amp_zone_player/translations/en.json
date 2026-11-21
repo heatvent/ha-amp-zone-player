@@ -79,7 +79,15 @@
       },
       "sound_modes": {
         "title": "Sound mode per receiver",
-        "description": "Choose the sound mode each receiver switches to when it joins. \"Use the default\" applies **{default}**. \"Don't change it\" leaves the receiver as it is. A mode the receiver does not list is skipped.\n\n{receivers}"
+        "description": "Choose the sound mode each receiver switches to when it joins. \"Use the default\" applies **{default}**. \"Don't change it\" leaves the receiver as it is. A mode the receiver does not list is skipped.\n\n{receivers}",
+        "data": {
+          "digital_power_off": "Turn the receiver off when its room is turned off",
+          "digital_off_sound_mode": "Sound mode to set before turning a receiver off (optional)"
+        },
+        "data_description": {
+          "digital_power_off": "Only when the room is turned off for music (Music Assistant, Alexa, a script). A receiver taken over by TV or another input stays on.",
+          "digital_off_sound_mode": "For example Auto Format Decoding for Movie, so the receiver is ready for TV."
+        }
       },
       "volumes": {
         "title": "Startup volume per zone",

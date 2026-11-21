@@ -16,6 +16,8 @@ from homeassistant.helpers import selector
 from .const import (
     CONF_DECODER,
     CONF_DIGITAL_SOUND_MODE,
+    CONF_DIGITAL_OFF_SOUND_MODE,
+    CONF_DIGITAL_POWER_OFF,
     CONF_DIGITAL_SOUND_MODES,
     CONF_DIGITAL_ZONES,
     CONF_NAME_PREFIX,
@@ -573,6 +575,9 @@ class AmpZonePlayerOptionsFlow(config_entries.OptionsFlow):
                 for zone, value in (old if isinstance(old, dict) else {}).items()
                 if zone in keep
             }
+        for key in (CONF_DIGITAL_POWER_OFF, CONF_DIGITAL_OFF_SOUND_MODE):
+            if key in self.config_entry.data and key not in new_data:
+                new_data[key] = self.config_entry.data[key]
         self._final = (new_data, unique_id)
         if digital:
             return await self.async_step_sound_modes()
@@ -593,6 +598,10 @@ class AmpZonePlayerOptionsFlow(config_entries.OptionsFlow):
         data, _unique_id = self._final
         zones: list[str] = data[CONF_DIGITAL_ZONES]
         if user_input is not None:
+            data[CONF_DIGITAL_POWER_OFF] = bool(user_input.get(CONF_DIGITAL_POWER_OFF))
+            data[CONF_DIGITAL_OFF_SOUND_MODE] = _normalize_sound_mode(
+                user_input.get(CONF_DIGITAL_OFF_SOUND_MODE)
+            )
             data[CONF_DIGITAL_SOUND_MODES] = {
                 zone: value
                 for zone in zones
@@ -602,7 +611,29 @@ class AmpZonePlayerOptionsFlow(config_entries.OptionsFlow):
             return await self.async_step_volumes()
 
         current = data.get(CONF_DIGITAL_SOUND_MODES) or {}
-        schema: dict[Any, Any] = {}
+        all_modes: list[str] = []
+        for zone in zones:
+            for entity_id in sound_mode_entity_candidates(zone):
+                state = self.hass.states.get(entity_id)
+                for mode in (state.attributes.get("sound_mode_list") or []) if state else []:
+                    if isinstance(mode, str) and mode not in all_modes:
+                        all_modes.append(mode)
+        off_mode = _normalize_sound_mode(data.get(CONF_DIGITAL_OFF_SOUND_MODE))
+        schema: dict[Any, Any] = {
+            vol.Optional(
+                CONF_DIGITAL_POWER_OFF, default=bool(data.get(CONF_DIGITAL_POWER_OFF))
+            ): selector.BooleanSelector(),
+            vol.Optional(
+                CONF_DIGITAL_OFF_SOUND_MODE,
+                description={"suggested_value": off_mode} if off_mode else None,
+            ): selector.SelectSelector(
+                selector.SelectSelectorConfig(
+                    options=all_modes,
+                    custom_value=True,
+                    mode=selector.SelectSelectorMode.DROPDOWN,
+                )
+            ),
+        }
         names: list[str] = []
         for zone in zones:
             choices = [

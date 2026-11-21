@@ -94,6 +94,7 @@ You play on Bar Speakers (facade)
 - After a restart, zones that are already on (and receivers still in the SyncGroup) come back as session members
 - Optional `select_source` when an amp zone turns on (exact name from the zone `source_list`)
 - Optional sound mode when a digital zone joins — applied to a Songpal/AVR `*_receiver` sibling when the MA AirPlay/Cast player has no `sound_mode_list`
+- Optional: turn a receiver off (after setting a movie sound mode) when its room is turned off for music; a receiver taken over by TV or another input stays on
 - Optional startup volume per zone (amp zones and receivers), set only when the zone is turned on for music
 - Per-zone volume; leaving a room does not stop the queue for others
 - Short facade names (`Bar Speakers`, `Theater Speakers`) from amp / receiver labels

@@ -40,3 +40,24 @@ async def test_blank_zones_are_left_alone(hass: HomeAssistant) -> None:
     flow, saved = _flow(hass, {STR: 30})
     await flow.async_step_volumes({AMP: 22.0})
     assert saved[0][CONF_STARTUP_VOLUMES] == {AMP: 22}
+
+
+async def test_receiver_page_saves_power_off_and_movie_mode(hass: HomeAssistant) -> None:
+    from custom_components.amp_zone_player.const import (
+        CONF_DIGITAL_OFF_SOUND_MODE,
+        CONF_DIGITAL_POWER_OFF,
+    )
+
+    flow, saved = _flow(hass, {})
+    form = await flow.async_step_sound_modes()
+    assert {str(key) for key in form["data_schema"].schema} >= {
+        CONF_DIGITAL_POWER_OFF,
+        CONF_DIGITAL_OFF_SOUND_MODE,
+        STR,
+    }
+    await flow.async_step_sound_modes(
+        {CONF_DIGITAL_POWER_OFF: True, CONF_DIGITAL_OFF_SOUND_MODE: " Movie "}
+    )
+    data = flow._final[0]
+    assert data[CONF_DIGITAL_POWER_OFF] is True
+    assert data[CONF_DIGITAL_OFF_SOUND_MODE] == "Movie"

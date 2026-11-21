@@ -46,6 +46,8 @@ from homeassistant.helpers.event import async_track_state_change_event
 from .const import (
     CONF_DECODER,
     CONF_DIGITAL_SOUND_MODE,
+    CONF_DIGITAL_OFF_SOUND_MODE,
+    CONF_DIGITAL_POWER_OFF,
     CONF_DIGITAL_SOUND_MODES,
     CONF_STARTUP_VOLUMES,
     CONF_DIGITAL_ZONES,
@@ -62,6 +64,7 @@ from .helpers import (
     area_for_facade,
     digital_zone_in_sync_group,
     effective_sound_mode,
+    receiver_power_entity,
     startup_volume,
     normalize_zones,
     resolve_sound_mode_entity,
@@ -129,6 +132,8 @@ async def async_setup_entry(
     if not isinstance(sound_modes, dict):
         sound_modes = {}
     volumes = config.get(CONF_STARTUP_VOLUMES)
+    power_off = bool(config.get(CONF_DIGITAL_POWER_OFF))
+    off_sound_mode = (config.get(CONF_DIGITAL_OFF_SOUND_MODE) or "").strip() or None
     playback = (config.get(CONF_PLAYBACK) or "").strip() or None
     if playback == decoder:
         playback = None
@@ -186,6 +191,8 @@ async def async_setup_entry(
             zone_kind=ZONE_KIND_DIGITAL,
             digital_sound_mode=effective_sound_mode(zone_id, sound_mode, sound_modes),
             startup_volume=startup_volume(zone_id, volumes),
+            power_off=power_off,
+            off_sound_mode=off_sound_mode,
         )
         for zone_id in digital_zones
     )
@@ -217,6 +224,8 @@ class AmpZoneFacade(MediaPlayerEntity):
         zone_kind: str = ZONE_KIND_AMP,
         digital_sound_mode: str | None = None,
         startup_volume: float | None = None,
+        power_off: bool = False,
+        off_sound_mode: str | None = None,
     ) -> None:
         self.hass = hass
         self._entry = entry
@@ -229,6 +238,12 @@ class AmpZoneFacade(MediaPlayerEntity):
         self._zone_kind = zone_kind
         self._digital_sound_mode = digital_sound_mode
         self._startup_volume = startup_volume
+        self._power_off = power_off
+        self._off_sound_mode = off_sound_mode
+        # Receiver input when it joined; a different input later means someone
+        # took it (turntable, TV) and turning the room off must leave it on.
+        self._joined_source: str | None = None
+        self._joined_source_known = False
         self._attr_unique_id = (
             f"{entry.entry_id}_digital_{zone_entity_id}"
             if zone_kind == ZONE_KIND_DIGITAL
@@ -352,6 +367,9 @@ class AmpZoneFacade(MediaPlayerEntity):
         if self._digital_in_sync_group():
             self._digital_seen_in_sync = True
             self._digital_join_pending = False
+            # The receiver has settled on the stream by now; this is the input
+            # it reports while playing music (Sony keeps showing the last HDMI).
+            self._remember_receiver_source()
             self.async_write_ha_state()
             return
         self._digital_join_pending = False
@@ -568,13 +586,13 @@ class AmpZoneFacade(MediaPlayerEntity):
                 raise
             return False
 
-    def _resolve_sound_mode_entity(self) -> str | None:
+    def _resolve_sound_mode_entity(self, mode: str | None = None) -> str | None:
         """Prefer Songpal/AVR receiver over MA AirPlay proxy for sound mode.
 
         None when the receiver lists its modes and the configured one is not
         among them (the call would only fail).
         """
-        mode = self._digital_sound_mode or ""
+        mode = (self._digital_sound_mode if mode is None else mode) or ""
         lists: dict[str, list[str] | None] = {}
         for entity_id in sound_mode_entity_candidates(self._zone_id):
             state = self.hass.states.get(entity_id)
@@ -605,11 +623,14 @@ class AmpZoneFacade(MediaPlayerEntity):
             if self._digital_in_sync_group():
                 # Already hearing the decoder: re-joining would only restart the
                 # receiver's stream and re-send its sound mode.
+                if not self._joined_source_known:
+                    self._remember_receiver_source()
                 self._digital_seen_in_sync = True
                 self._digital_join_pending = False
                 return True
             self._digital_seen_in_sync = False
             self._digital_join_pending = False
+            self._joined_source_known = False
             await self._async_call(SERVICE_TURN_ON, self._zone_id, critical=False)
             if self._digital_sound_mode:
                 sound_target = self._resolve_sound_mode_entity()
@@ -691,11 +712,66 @@ class AmpZoneFacade(MediaPlayerEntity):
             critical=False,
         )
 
+    def _receiver_entity_id(self) -> str:
+        existing = {
+            entity_id
+            for entity_id in (self._zone_id, *self._receiver_candidates())
+            if self.hass.states.get(entity_id) is not None
+        }
+        return receiver_power_entity(self._zone_id, existing)
+
+    def _receiver_candidates(self) -> list[str]:
+        return [c for c in sound_mode_entity_candidates(self._zone_id) if c != self._zone_id]
+
+    def _receiver_source(self) -> str | None:
+        state = self.hass.states.get(self._receiver_entity_id())
+        return state.attributes.get("source") if state else None
+
+    def _remember_receiver_source(self) -> None:
+        self._joined_source = self._receiver_source()
+        self._joined_source_known = True
+
+    async def _async_power_off_receiver(self) -> None:
+        """Turn off a receiver that was playing music, unless someone took it."""
+        receiver = self._receiver_entity_id()
+        state = self.hass.states.get(receiver)
+        if state is None or not _is_on_state(state):
+            return
+        source = state.attributes.get("source")
+        if self._joined_source_known:
+            if source != self._joined_source:
+                _LOGGER.debug(
+                    "%s is on %r (joined on %r) — leaving it on",
+                    receiver,
+                    source,
+                    self._joined_source,
+                )
+                return
+        elif source is not None:
+            # Unknown history (e.g. after a restart) and on a named input: it may
+            # be the TV, so leave it alone.
+            return
+        if self._off_sound_mode:
+            target = self._resolve_sound_mode_entity(self._off_sound_mode)
+            if target is not None:
+                await self._async_call(
+                    "select_sound_mode",
+                    target,
+                    {"sound_mode": self._off_sound_mode},
+                    critical=False,
+                )
+        await self._async_call(SERVICE_TURN_OFF, receiver, critical=False)
+
     async def async_power_zone_off(self) -> None:
         """Turn amp zone off, or unjoin digital receiver from the SyncGroup."""
         if self.is_digital:
+            was_playing = self._digital_seen_in_sync or self._digital_in_sync_group()
             self._digital_seen_in_sync = False
             await self._async_call("unjoin", self._zone_id, critical=False)
+            if self._power_off and was_playing:
+                await self._async_power_off_receiver()
+            self._joined_source_known = False
+            self._joined_source = None
             return
         await self._async_call(SERVICE_TURN_OFF, self._zone_id, critical=False)
 
