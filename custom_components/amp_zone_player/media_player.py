@@ -872,12 +872,28 @@ class AmpZoneFacade(MediaPlayerEntity):
             return None
         return zone.attributes.get(ATTR_MEDIA_VOLUME_MUTED)
 
+    def _idle_receiver(self) -> bool:
+        """A receiver room that is not in the music.
+
+        Its volume and mute belong to whatever else uses the receiver (TV,
+        another input), so the facade must not change them.
+        """
+        return self.is_digital and not (
+            self.entity_id and self._session.is_member(self.entity_id)
+        )
+
     async def async_set_volume_level(self, volume: float) -> None:
+        if self._idle_receiver():
+            _LOGGER.debug("%s is not playing music — ignoring volume", self.entity_id)
+            return
         await self._async_call(
             SERVICE_VOLUME_SET, self._zone_id, {ATTR_MEDIA_VOLUME_LEVEL: volume}
         )
 
     async def async_mute_volume(self, mute: bool) -> None:
+        if self._idle_receiver():
+            _LOGGER.debug("%s is not playing music — ignoring mute", self.entity_id)
+            return
         await self._async_call(
             SERVICE_VOLUME_MUTE, self._zone_id, {ATTR_MEDIA_VOLUME_MUTED: mute}
         )

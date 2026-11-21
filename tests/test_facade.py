@@ -218,6 +218,26 @@ async def test_receiver_not_in_music_is_left_alone(hass: HomeAssistant) -> None:
     assert [c[0] for c in calls] == ["unjoin"]
 
 
+@pytest.mark.parametrize("in_music", [False, True])
+async def test_receiver_volume_and_mute_only_while_in_music(
+    hass: HomeAssistant, in_music: bool
+) -> None:
+    facade, calls = _facade(hass, ZONE_KIND_DIGITAL, STR_ZONE)
+    if in_music:
+        facade._session._members = [facade.entity_id]
+    await facade.async_set_volume_level(0.4)
+    await facade.async_mute_volume(True)
+    expected = ["volume_set", "volume_mute"] if in_music else []
+    assert [c[0] for c in calls] == expected
+
+
+async def test_amp_zone_volume_works_when_off(hass: HomeAssistant) -> None:
+    hass.states.async_set(AMP_ZONE, "off", {})
+    facade, calls = _facade(hass, ZONE_KIND_AMP, AMP_ZONE)
+    await facade.async_set_volume_level(0.2)
+    assert [c[0] for c in calls] == ["volume_set"]
+
+
 @pytest.mark.parametrize(
     ("kind", "zone", "room_entity", "expected"),
     [
