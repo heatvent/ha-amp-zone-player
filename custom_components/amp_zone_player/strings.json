@@ -80,6 +80,10 @@
       "sound_modes": {
         "title": "Sound mode per receiver",
         "description": "Choose the sound mode each receiver switches to when it joins. \"Use the default\" applies **{default}**. \"Don't change it\" leaves the receiver as it is. A mode the receiver does not list is skipped.\n\n{receivers}"
+      },
+      "volumes": {
+        "title": "Startup volume per zone",
+        "description": "Volume each zone starts at when it is turned on for music. Leave a zone blank to keep the volume it already has. A zone that is already playing keeps its current volume.\n\n{zones}"
       }
     },
     "error": {

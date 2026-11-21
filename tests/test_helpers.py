@@ -1,5 +1,7 @@
 """Unit tests for helpers (no Home Assistant required)."""
 
+import pytest
+
 import sys
 from pathlib import Path
 
@@ -8,6 +10,7 @@ sys.path.insert(
 )
 
 from helpers import (  # noqa: E402
+    startup_volume,
     SOURCE_NONE,
     digital_join_members,
     digital_zone_in_sync_group,
@@ -173,3 +176,20 @@ def test_area_for_facade():
     assert area_for_facade("digital", "media_player.theater_str", areas) == "theater"
     # A digital zone never takes the MA proxy's area.
     assert area_for_facade("digital", "media_player.theater_str", {"media_player.theater_str": "media_closet"}) is None
+
+
+@pytest.mark.parametrize(
+    ("volumes", "expected"),
+    [
+        ({"media_player.a": 25}, 0.25),
+        ({"media_player.a": "40"}, 0.4),
+        ({"media_player.a": 0}, None),
+        ({"media_player.a": 150}, None),
+        ({"media_player.a": "loud"}, None),
+        ({}, None),
+        (None, None),
+    ],
+)
+def test_startup_volume(volumes, expected) -> None:
+    assert startup_volume("media_player.a", volumes) == expected
+

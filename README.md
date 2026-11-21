@@ -94,6 +94,7 @@ You play on Bar Speakers (facade)
 - After a restart, zones that are already on (and receivers still in the SyncGroup) come back as session members
 - Optional `select_source` when an amp zone turns on (exact name from the zone `source_list`)
 - Optional sound mode when a digital zone joins — applied to a Songpal/AVR `*_receiver` sibling when the MA AirPlay/Cast player has no `sound_mode_list`
+- Optional startup volume per zone (amp zones and receivers), set only when the zone is turned on for music
 - Per-zone volume; leaving a room does not stop the queue for others
 - Short facade names (`Bar Speakers`, `Theater Speakers`) from amp / receiver labels
 - Zone picker: Control4 Audio **speaker** zones, plus matrix zones from Monoprice, Russound, Yamaha, Onkyo, Denon, etc.
@@ -145,6 +146,8 @@ Copy `custom_components/amp_zone_player` into `config/custom_components/`, resta
 6. **Amp input / source** — plain-text name from the amp zone source list (e.g. `WiiM Pro`), or **None**
 7. **Name prefix** — usually blank
 8. **Hub name** — optional (blank → `Amp zones`); does not prefix player names
+
+In **Configure**, after the main page come **Sound mode per receiver** (when you have digital zones) and **Startup volume per zone**. Leave a zone's volume blank to keep the volume it has.
 
 Facades start as `Bar Speakers` / `Theater Speakers` (`media_player.bar_speakers`, `media_player.theater_speakers` when those ids are free). Renames you make in the Home Assistant UI are kept across restarts. Hide raw C4 zones, native WiiM, and raw Sonys in the HA UI if you only want facades; do **not** disable the decoder or digital backends — facades still need them.
 

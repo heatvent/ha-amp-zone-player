@@ -21,7 +21,12 @@ RECEIVER = "media_player.theater_receiver"
 
 
 def _facade(
-    hass: HomeAssistant, kind: str, zone: str, *, sound_mode: str | None = None
+    hass: HomeAssistant,
+    kind: str,
+    zone: str,
+    *,
+    sound_mode: str | None = None,
+    volume: float | None = None,
 ) -> tuple[AmpZoneFacade, list[tuple[str, str, dict[str, Any]]]]:
     entry = MockConfigEntry(domain=DOMAIN, data={})
     entry.add_to_hass(hass)
@@ -36,6 +41,7 @@ def _facade(
         name_prefix="",
         zone_kind=kind,
         digital_sound_mode=sound_mode,
+        startup_volume=volume,
     )
     facade.entity_id = "media_player.test_facade"
     calls: list[tuple[str, str, dict[str, Any]]] = []
@@ -105,6 +111,44 @@ async def test_digital_join_skips_unsupported_mode(hass: HomeAssistant) -> None:
     assert await facade.async_power_zone_on()
     assert [c[0] for c in calls] == ["turn_on", "join"]
     facade._cancel_background_tasks()
+
+
+async def test_amp_zone_powered_on_starts_at_its_volume(hass: HomeAssistant) -> None:
+    hass.states.async_set(AMP_ZONE, "off", {})
+    facade, calls = _facade(hass, ZONE_KIND_AMP, AMP_ZONE, volume=0.25)
+    assert await facade.async_power_zone_on()
+    assert [(c[0], c[2]) for c in calls] == [
+        ("turn_on", {}),
+        ("volume_set", {"volume_level": 0.25}),
+    ]
+
+
+async def test_amp_zone_already_on_keeps_its_volume(hass: HomeAssistant) -> None:
+    hass.states.async_set(AMP_ZONE, "on", {"source": "WiiM Pro", "is_volume_muted": False})
+    facade, calls = _facade(hass, ZONE_KIND_AMP, AMP_ZONE, volume=0.25)
+    assert await facade.async_power_zone_on()
+    assert calls == []
+
+
+async def test_digital_join_sets_startup_volume(hass: HomeAssistant) -> None:
+    hass.states.async_set(DECODER, "idle", {"group_members": []})
+    hass.states.async_set(STR_ZONE, "idle", {})
+    facade, calls = _facade(hass, ZONE_KIND_DIGITAL, STR_ZONE, volume=0.3)
+    assert await facade.async_power_zone_on()
+    assert [(c[0], c[1]) for c in calls] == [
+        ("turn_on", STR_ZONE),
+        ("join", DECODER),
+        ("volume_set", STR_ZONE),
+    ]
+    facade._cancel_background_tasks()
+
+
+async def test_digital_already_synced_keeps_its_volume(hass: HomeAssistant) -> None:
+    hass.states.async_set(DECODER, "playing", {"group_members": [DECODER, STR_ZONE]})
+    hass.states.async_set(STR_ZONE, "playing", {"group_members": [DECODER, STR_ZONE]})
+    facade, calls = _facade(hass, ZONE_KIND_DIGITAL, STR_ZONE, volume=0.3)
+    assert await facade.async_power_zone_on()
+    assert calls == []
 
 
 @pytest.mark.parametrize(

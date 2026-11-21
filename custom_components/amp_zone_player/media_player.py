@@ -47,6 +47,7 @@ from .const import (
     CONF_DECODER,
     CONF_DIGITAL_SOUND_MODE,
     CONF_DIGITAL_SOUND_MODES,
+    CONF_STARTUP_VOLUMES,
     CONF_DIGITAL_ZONES,
     CONF_NAME_PREFIX,
     CONF_PLAYBACK,
@@ -61,6 +62,7 @@ from .helpers import (
     area_for_facade,
     digital_zone_in_sync_group,
     effective_sound_mode,
+    startup_volume,
     normalize_zones,
     resolve_sound_mode_entity,
     sound_mode_entity_candidates,
@@ -126,6 +128,7 @@ async def async_setup_entry(
     sound_modes = config.get(CONF_DIGITAL_SOUND_MODES)
     if not isinstance(sound_modes, dict):
         sound_modes = {}
+    volumes = config.get(CONF_STARTUP_VOLUMES)
     playback = (config.get(CONF_PLAYBACK) or "").strip() or None
     if playback == decoder:
         playback = None
@@ -166,6 +169,7 @@ async def async_setup_entry(
             name_prefix=prefix,
             zone_kind=ZONE_KIND_AMP,
             digital_sound_mode=None,
+            startup_volume=startup_volume(zone_id, volumes),
         )
         for zone_id in zones
     ]
@@ -181,6 +185,7 @@ async def async_setup_entry(
             name_prefix=prefix,
             zone_kind=ZONE_KIND_DIGITAL,
             digital_sound_mode=effective_sound_mode(zone_id, sound_mode, sound_modes),
+            startup_volume=startup_volume(zone_id, volumes),
         )
         for zone_id in digital_zones
     )
@@ -211,6 +216,7 @@ class AmpZoneFacade(MediaPlayerEntity):
         name_prefix: str,
         zone_kind: str = ZONE_KIND_AMP,
         digital_sound_mode: str | None = None,
+        startup_volume: float | None = None,
     ) -> None:
         self.hass = hass
         self._entry = entry
@@ -222,6 +228,7 @@ class AmpZoneFacade(MediaPlayerEntity):
         self._name_prefix = name_prefix
         self._zone_kind = zone_kind
         self._digital_sound_mode = digital_sound_mode
+        self._startup_volume = startup_volume
         self._attr_unique_id = (
             f"{entry.entry_id}_digital_{zone_entity_id}"
             if zone_kind == ZONE_KIND_DIGITAL
@@ -635,6 +642,7 @@ class AmpZoneFacade(MediaPlayerEntity):
                 )
                 return False
             self._digital_join_pending = True
+            await self._async_apply_startup_volume()
             self._schedule_join_confirm()
             return True
 
@@ -642,6 +650,9 @@ class AmpZoneFacade(MediaPlayerEntity):
         # at a time, so only send what the zone's current state still needs.
         if not _is_on_state(self._zone()):
             await self._async_call(SERVICE_TURN_ON, self._zone_id, critical=True)
+            # Only a zone this call powered up starts at its startup volume; one
+            # already on keeps whatever someone set it to.
+            await self._async_apply_startup_volume()
         zone = self._zone()
         if self._source_name and (
             zone is None or zone.attributes.get("source") != self._source_name
@@ -669,6 +680,16 @@ class AmpZoneFacade(MediaPlayerEntity):
                 critical=False,
             )
         return True
+
+    async def _async_apply_startup_volume(self) -> None:
+        if self._startup_volume is None:
+            return
+        await self._async_call(
+            SERVICE_VOLUME_SET,
+            self._zone_id,
+            {ATTR_MEDIA_VOLUME_LEVEL: self._startup_volume},
+            critical=False,
+        )
 
     async def async_power_zone_off(self) -> None:
         """Turn amp zone off, or unjoin digital receiver from the SyncGroup."""
