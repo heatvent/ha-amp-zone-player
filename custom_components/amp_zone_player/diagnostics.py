@@ -15,7 +15,6 @@ from .const import (
     CONF_PLAYBACK,
     CONF_SOURCE,
     CONF_ZONES,
-    DOMAIN,
 )
 from .helpers import normalize_source
 
@@ -65,7 +64,7 @@ async def async_get_config_entry_diagnostics(
 
     decoder_state = hass.states.get(decoder) if decoder else None
     playback_state = hass.states.get(playback) if playback else None
-    session = hass.data.get(DOMAIN, {}).get(entry.entry_id)
+    session = getattr(entry, "runtime_data", None)
 
     return {
         "entry": {
