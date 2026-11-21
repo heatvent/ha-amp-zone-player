@@ -1,5 +1,9 @@
 # Changelog
 
+## 1.2.11 - 2026-11-21
+
+- A receiver room that is not playing music ignores volume and mute. Its receiver may be in use for TV, so "mute Theater Speakers" or a group volume change no longer mutes or changes the TV. Amp rooms are unchanged.
+
 ## 1.2.10 - 2026-11-21
 
 - Receivers can turn off with their room: the receiver page in Configure has "Turn the receiver off when its room is turned off" and an optional sound mode to set first (for example Auto Format Decoding for Movie). It applies when the room is turned off for music, from Music Assistant, Alexa or a script. A receiver that TV or another input took over, or that was switched to another input while in the music (a turntable), stays on.
