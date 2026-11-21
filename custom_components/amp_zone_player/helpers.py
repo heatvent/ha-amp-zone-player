@@ -216,3 +216,11 @@ def startup_volume(zone_id: str, volumes: dict[str, Any] | None) -> float | None
     if not 1 <= percent <= 100:
         return None
     return percent / 100
+
+
+def receiver_power_entity(zone_id: str, existing: set[str]) -> str:
+    """Entity that powers a digital zone's receiver: its AVR sibling if present."""
+    for entity_id in sound_mode_entity_candidates(zone_id):
+        if entity_id != zone_id and entity_id in existing:
+            return entity_id
+    return zone_id

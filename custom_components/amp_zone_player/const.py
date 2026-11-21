@@ -14,6 +14,10 @@ CONF_DIGITAL_SOUND_MODES = "digital_sound_modes"
 # Optional per-zone startup volume: {zone entity_id: percent 1-100}, set when
 # the facade powers a zone on (amp) or joins it (receiver).
 CONF_STARTUP_VOLUMES = "startup_volumes"
+# Turn a receiver off when its room is turned off (not when TV takes it), and
+# the sound mode to leave it in for the next TV session.
+CONF_DIGITAL_POWER_OFF = "digital_power_off"
+CONF_DIGITAL_OFF_SOUND_MODE = "digital_off_sound_mode"
 CONF_SOURCE = "source"
 CONF_NAME_PREFIX = "name_prefix"
 # Optional MA SyncGroup (or other player) that owns the queue when Sonys join.
