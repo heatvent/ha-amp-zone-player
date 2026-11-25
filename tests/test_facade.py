@@ -86,6 +86,76 @@ async def test_amp_zone_on_other_input_and_muted(hass: HomeAssistant) -> None:
     ]
 
 
+MUTED = {"source": "WiiM Pro", "is_volume_muted": True}
+UNMUTE = ("volume_mute", {"is_volume_muted": False})
+
+
+def _session_of_two(hass: HomeAssistant):
+    """A leader facade and a second one in the same session, both amp zones."""
+    leader, leader_calls = _facade(hass, ZONE_KIND_AMP, AMP_ZONE)
+    other, other_calls = _facade(hass, ZONE_KIND_AMP, "media_player.amp_bar")
+    other.entity_id = "media_player.other_facade"
+    session = leader._session
+    other._session = session
+    session._facades = {leader.entity_id: leader, other.entity_id: other}
+    return session, leader, leader_calls, other, other_calls
+
+
+async def test_adding_a_room_keeps_the_leader_muted(hass: HomeAssistant) -> None:
+    hass.states.async_set(AMP_ZONE, "on", MUTED)
+    hass.states.async_set("media_player.amp_bar", "on", MUTED)
+    session, leader, calls, other, other_calls = _session_of_two(hass)
+    session._members, session.leader_id = [leader.entity_id], leader.entity_id
+    await session.async_join(leader.entity_id, [other.entity_id])
+    assert session.members == [leader.entity_id, other.entity_id]
+    assert calls == []
+    # The room that joins is still unmuted.
+    assert [(c[0], c[2]) for c in other_calls] == [UNMUTE]
+
+
+async def test_member_taking_over_as_leader_keeps_its_mute(hass: HomeAssistant) -> None:
+    hass.states.async_set(AMP_ZONE, "on", MUTED)
+    hass.states.async_set("media_player.amp_bar", "on", MUTED)
+    session, leader, calls, other, other_calls = _session_of_two(hass)
+    session._members = [leader.entity_id, other.entity_id]
+    session.leader_id = leader.entity_id
+    await session.async_join(other.entity_id, [leader.entity_id])
+    assert session.leader_id == other.entity_id
+    assert calls == other_calls == []
+
+
+async def test_leader_new_to_the_session_is_unmuted(hass: HomeAssistant) -> None:
+    hass.states.async_set(AMP_ZONE, "on", MUTED)
+    hass.states.async_set("media_player.amp_bar", "on", MUTED)
+    session, leader, calls, other, _ = _session_of_two(hass)
+    await session.async_join(leader.entity_id, [other.entity_id])
+    assert [(c[0], c[2]) for c in calls] == [UNMUTE]
+
+
+async def test_play_unmutes_the_room(hass: HomeAssistant) -> None:
+    hass.states.async_set(AMP_ZONE, "on", MUTED)
+    session, leader, calls, _, _ = _session_of_two(hass)
+    session._members, session.leader_id = [leader.entity_id], leader.entity_id
+    await session.async_ensure_leader(leader.entity_id)
+    assert [(c[0], c[2]) for c in calls] == [UNMUTE]
+
+
+async def test_leader_that_was_off_is_unmuted(hass: HomeAssistant) -> None:
+    """Amps that stay muted through turn_on need the unmute, member or not."""
+    hass.states.async_set(AMP_ZONE, "off", {})
+    facade, calls = _facade(hass, ZONE_KIND_AMP, AMP_ZONE)
+
+    async def _muted_turn_on(service, entity_id, data=None, *, critical=True):
+        calls.append((service, entity_id, data or {}))
+        if service == "turn_on":
+            hass.states.async_set(AMP_ZONE, "on", MUTED)
+        return True
+
+    facade._async_call = _muted_turn_on  # type: ignore[method-assign]
+    assert await facade.async_power_zone_on(keep_mute=True)
+    assert [(c[0], c[2]) for c in calls] == [("turn_on", {}), UNMUTE]
+
+
 async def test_digital_zone_already_in_sync_group_sends_nothing(hass: HomeAssistant) -> None:
     hass.states.async_set(DECODER, "playing", {"group_members": [DECODER, STR_ZONE]})
     hass.states.async_set(STR_ZONE, "playing", {"group_members": [DECODER, STR_ZONE]})

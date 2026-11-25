@@ -1,5 +1,9 @@
 # Changelog
 
+## 1.2.13 - 2026-11-24
+
+- Adding a room to a group no longer unmutes the lead room. A room is still unmuted when it joins and when you press Play on it.
+
 ## 1.2.12 - 2026-11-24
 
 - An amp zone that is unavailable for a moment (one missed poll) no longer leaves its group. Only a zone that is really off does.
