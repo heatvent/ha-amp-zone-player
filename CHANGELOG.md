@@ -1,5 +1,9 @@
 # Changelog
 
+## 1.2.14 - 2026-11-24
+
+- Next, Previous, seek, and playing something else keep a muted room muted while music is playing. Play after a pause or a stop still unmutes it.
+
 ## 1.2.13 - 2026-11-24
 
 - Adding a room to a group no longer unmutes the lead room. A room is still unmuted when it joins and when you press Play on it.
