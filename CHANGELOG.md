@@ -1,5 +1,9 @@
 # Changelog
 
+## 1.2.12 - 2026-11-24
+
+- An amp zone that is unavailable for a moment (one missed poll) no longer leaves its group. Only a zone that is really off does.
+
 ## 1.2.11 - 2026-11-21
 
 - A receiver room that is not playing music ignores volume and mute. Its receiver may be in use for TV, so "mute Theater Speakers" or a group volume change no longer mutes or changes the TV. Amp rooms are unchanged.
