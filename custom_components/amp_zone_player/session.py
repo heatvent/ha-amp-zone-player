@@ -166,19 +166,28 @@ class AmpSession:
             )
             self.async_notify()
 
-    async def async_ensure_leader(self, facade_entity_id: str) -> None:
-        """Make this facade the session leader and a member (zone on)."""
-        async with self._lock:
-            await self._ensure_leader_locked(facade_entity_id)
+    async def async_ensure_leader(
+        self, facade_entity_id: str, *, keep_mute: bool = False
+    ) -> None:
+        """Make this facade the session leader and a member (zone on).
 
-    async def _ensure_leader_locked(self, facade_entity_id: str) -> None:
+        ``keep_mute`` only applies to a facade that is already a member.
+        """
+        async with self._lock:
+            await self._ensure_leader_locked(facade_entity_id, keep_mute)
+
+    async def _ensure_leader_locked(
+        self, facade_entity_id: str, keep_mute: bool
+    ) -> None:
         facade = self._facades.get(facade_entity_id)
         if facade is None:
             _LOGGER.warning(
                 "ensure_leader ignored — unknown facade %s", facade_entity_id
             )
             return
-        if not await facade.async_power_zone_on():
+        if not await facade.async_power_zone_on(
+            keep_mute=keep_mute and facade_entity_id in self._members
+        ):
             return
         if facade_entity_id not in self._members:
             if self.leader_id and self.leader_id in self._members:

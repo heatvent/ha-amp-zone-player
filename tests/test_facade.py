@@ -9,6 +9,7 @@ from homeassistant.const import STATE_UNAVAILABLE, STATE_UNKNOWN
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers import area_registry as ar
 from homeassistant.helpers import entity_registry as er
+from homeassistant.helpers.event import async_track_state_change_event
 from pytest_homeassistant_custom_component.common import MockConfigEntry
 
 from custom_components.amp_zone_player.const import DOMAIN, ZONE_KIND_AMP, ZONE_KIND_DIGITAL
@@ -138,6 +139,66 @@ async def test_play_unmutes_the_room(hass: HomeAssistant) -> None:
     session._members, session.leader_id = [leader.entity_id], leader.entity_id
     await session.async_ensure_leader(leader.entity_id)
     assert [(c[0], c[2]) for c in calls] == [UNMUTE]
+
+
+URL = "http://ma.local/flow.mp3"
+
+
+def _muted_member(hass: HomeAssistant):
+    hass.states.async_set(AMP_ZONE, "on", MUTED)
+    session, leader, calls, _, _ = _session_of_two(hass)
+    session._members, session.leader_id = [leader.entity_id], leader.entity_id
+    async_track_state_change_event(hass, [DECODER], leader._note_feed_change)
+    return leader, calls
+
+
+async def _feed(hass: HomeAssistant, *states: str) -> None:
+    for state in states:
+        hass.states.async_set(DECODER, state, {})
+        await hass.async_block_till_done()
+
+
+@pytest.mark.parametrize("feed", [["playing"], ["playing", "idle"]], ids=["next", "stopped first"])
+async def test_next_and_seek_keep_the_room_muted(hass: HomeAssistant, feed) -> None:
+    leader, calls = _muted_member(hass)
+    await _feed(hass, *feed)
+    await leader.async_play_media("music", URL)
+    assert UNMUTE not in [(c[0], c[2]) for c in calls]
+    assert "play_media" in [c[0] for c in calls]
+
+
+@pytest.mark.parametrize(
+    "feed",
+    [["idle"], ["paused"], ["playing", "paused"], ["playing", "paused", "idle"], ["playing", "idle", "playing", "paused"]],
+)
+async def test_playing_after_a_pause_unmutes_the_room(hass: HomeAssistant, feed) -> None:
+    leader, calls = _muted_member(hass)
+    await _feed(hass, *feed)
+    await leader.async_play_media("music", URL)
+    assert UNMUTE in [(c[0], c[2]) for c in calls]
+
+
+async def test_playing_a_while_after_a_stop_unmutes_the_room(hass: HomeAssistant) -> None:
+    leader, calls = _muted_member(hass)
+    await _feed(hass, "playing", "idle")
+    leader._feed_stopped_at -= 6
+    await leader.async_play_media("music", URL)
+    assert UNMUTE in [(c[0], c[2]) for c in calls]
+
+
+async def test_resume_unmutes_the_room(hass: HomeAssistant) -> None:
+    leader, calls = _muted_member(hass)
+    await _feed(hass, "playing", "paused")
+    await leader.async_media_play()
+    assert [(c[0], c[2]) for c in calls] == [UNMUTE, ("media_play", {})]
+
+
+async def test_room_new_to_the_music_is_unmuted_while_it_plays(hass: HomeAssistant) -> None:
+    hass.states.async_set(AMP_ZONE, "on", MUTED)
+    _, leader, calls, _, _ = _session_of_two(hass)
+    await _feed(hass, "playing")
+    await leader.async_play_media("music", URL)
+    assert UNMUTE in [(c[0], c[2]) for c in calls]
 
 
 async def test_leader_that_was_off_is_unmuted(hass: HomeAssistant) -> None:

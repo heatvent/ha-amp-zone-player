@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import time
 from typing import Any
 
 from homeassistant.components.media_player import (
@@ -79,6 +80,8 @@ _LOGGER = logging.getLogger(__name__)
 DEVICE_NAME_FALLBACK = "Amp zones"
 # Debounce before dropping a room that left outside this integration.
 _EXTERNAL_OFF_GRACE_SEC = 1.5
+# Music Assistant stops the feed and starts it again for Next and seek.
+_RESTART_SEC = 5.0
 # How long a digital join may look on before the SyncGroup must list it.
 _DIGITAL_JOIN_CONFIRM_SEC = 8.0
 
@@ -243,6 +246,7 @@ class AmpZoneFacade(MediaPlayerEntity):
         self._zone_kind = zone_kind
         self._digital_sound_mode = digital_sound_mode
         self._startup_volume = startup_volume
+        self._feed_stopped_at: float | None = None
         self._power_off = power_off
         self._off_sound_mode = off_sound_mode
         # Receiver input when it joined; a different input later means someone
@@ -441,7 +445,8 @@ class AmpZoneFacade(MediaPlayerEntity):
         )
 
         @callback
-        def _on_change(_event: Event) -> None:
+        def _on_change(event: Event) -> None:
+            self._note_feed_change(event)
             if self.is_digital:
                 if self._digital_in_sync_group():
                     self._digital_seen_in_sync = True
@@ -540,6 +545,27 @@ class AmpZoneFacade(MediaPlayerEntity):
         if decoder is None:
             return False
         return decoder.state in (STATE_PLAYING, STATE_PAUSED)
+
+    @callback
+    def _note_feed_change(self, event: Event) -> None:
+        """Remember when the feed stopped. A pause is not a stop."""
+        if event.data.get("entity_id") != self._playback_id:
+            return
+        old, new = event.data.get("old_state"), event.data.get("new_state")
+        if new is None or new.state in (STATE_PLAYING, STATE_PAUSED):
+            self._feed_stopped_at = None
+        elif old is not None and old.state == STATE_PLAYING:
+            self._feed_stopped_at = time.monotonic()
+
+    def _feed_is_playing(self) -> bool:
+        """True while music plays, and for the gap of a Next or seek."""
+        playback = self._playback()
+        if playback is not None and playback.state == STATE_PLAYING:
+            return True
+        return (
+            self._feed_stopped_at is not None
+            and time.monotonic() - self._feed_stopped_at < _RESTART_SEC
+        )
 
     def _zone_is_active(self) -> bool:
         """Amp: matrix zone on. Digital: in SyncGroup (or briefly optimistic while joining)."""
@@ -980,7 +1006,10 @@ class AmpZoneFacade(MediaPlayerEntity):
             raise HomeAssistantError("play_media requires a media_content_id")
 
         if self.entity_id:
-            await self._session.async_ensure_leader(self.entity_id)
+            # Next and seek arrive here too: they must not unmute the room.
+            await self._session.async_ensure_leader(
+                self.entity_id, keep_mute=self._feed_is_playing()
+            )
 
         # Soft-attach when the feed is already on this exact item (e.g. House
         # SyncGroup owns the queue and MA retargets a facade). New media always

@@ -228,7 +228,7 @@ data:
 | **Join** | Member zones on; listed in `group_members` (merge) |
 | **Unjoin / Off** | That zone off; leaves session; queue keeps playing if others remain |
 | **Stop** | Stops (or pauses) the **playback** target |
-| **Volume / Mute** | That zone only |
+| **Volume / Mute** | That zone only. A muted room stays muted on Next, seek, or new media while music is playing; Play after a pause or stop unmutes it |
 | **Source** | WiiM hardware input (shared). Line In plays the analog input through the rooms that are on |
 | **Pause / Next / Seek** | Playback target (shared) |
 
