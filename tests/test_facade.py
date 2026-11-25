@@ -5,6 +5,7 @@ from __future__ import annotations
 from typing import Any
 
 import pytest
+from homeassistant.const import STATE_UNAVAILABLE, STATE_UNKNOWN
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers import area_registry as ar
 from homeassistant.helpers import entity_registry as er
@@ -269,3 +270,46 @@ async def test_facade_adopts_room_area(
     entities.async_update_entity(own.entity_id, area_id=closet.id)
     facade._adopt_room_area()
     assert entities.async_get(own.entity_id).area_id == closet.id
+
+
+async def _member_after(hass: HomeAssistant, monkeypatch, *states: str | None) -> bool:
+    """Put a playing amp zone in a group, walk it through states, and say if it stayed."""
+    monkeypatch.setattr("custom_components.amp_zone_player.media_player._EXTERNAL_OFF_GRACE_SEC", 0)
+    hass.states.async_set(AMP_ZONE, "on", {"source": "WiiM Pro"})
+    facade, _calls = _facade(hass, ZONE_KIND_AMP, AMP_ZONE)
+    facade.hass = hass
+    session = facade._session
+    session.register(facade)
+    session._members = [facade.entity_id, "media_player.other_facade"]
+    session.leader_id = facade.entity_id
+    for state in states:
+        if state is None:
+            hass.states.async_remove(AMP_ZONE)
+        else:
+            hass.states.async_set(AMP_ZONE, state)
+        facade._schedule_amp_external_off()
+        if facade._amp_off_task is not None:
+            await facade._amp_off_task
+    return session.is_member(facade.entity_id)
+
+
+@pytest.mark.parametrize(
+    "states",
+    [
+        (STATE_UNAVAILABLE,),
+        (STATE_UNAVAILABLE, "on"),
+        (STATE_UNKNOWN,),
+        (None,),
+    ],
+)
+async def test_unavailable_amp_zone_stays_in_its_group(
+    hass: HomeAssistant, monkeypatch, states
+) -> None:
+    assert await _member_after(hass, monkeypatch, *states)
+
+
+@pytest.mark.parametrize("states", [("off",), (STATE_UNAVAILABLE, "off")])
+async def test_amp_zone_really_off_leaves_its_group(
+    hass: HomeAssistant, monkeypatch, states
+) -> None:
+    assert not await _member_after(hass, monkeypatch, *states)

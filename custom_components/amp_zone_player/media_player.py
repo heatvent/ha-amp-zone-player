@@ -111,6 +111,11 @@ def _is_on_state(state: State | None) -> bool:
     return True
 
 
+def _is_off_state(state: State | None) -> bool:
+    """Really off. A zone that is missing or unavailable for a moment is not off."""
+    return state is not None and state.state == STATE_OFF
+
+
 def _short_media_id(media_id: str, limit: int = 80) -> str:
     if len(media_id) <= limit:
         return media_id
@@ -336,7 +341,7 @@ class AmpZoneFacade(MediaPlayerEntity):
             return
         if not self._session.is_member(self.entity_id):
             return
-        if _is_on_state(self._zone()):
+        if not _is_off_state(self._zone()):
             self._cancel_task(self._amp_off_task)
             self._amp_off_task = None
             return
@@ -389,7 +394,7 @@ class AmpZoneFacade(MediaPlayerEntity):
             return
         if not self.entity_id or not self._session.is_member(self.entity_id):
             return
-        if _is_on_state(self._zone()):
+        if not _is_off_state(self._zone()):
             return
         _LOGGER.info(
             "Amp zone %s turned off outside the session — removing",
