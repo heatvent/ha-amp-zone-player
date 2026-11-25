@@ -619,9 +619,10 @@ class AmpZoneFacade(MediaPlayerEntity):
             )
         return target
 
-    async def async_power_zone_on(self) -> bool:
+    async def async_power_zone_on(self, *, keep_mute: bool = False) -> bool:
         """Turn amp zone on, or join digital receiver to the WiiM / decoder.
 
+        ``keep_mute`` leaves the mute of an amp zone that is already on alone.
         Returns False when a digital receiver did not join the SyncGroup.
         """
         if self.is_digital:
@@ -675,6 +676,7 @@ class AmpZoneFacade(MediaPlayerEntity):
         # Each call below is a round trip to an amp that may handle one command
         # at a time, so only send what the zone's current state still needs.
         if not _is_on_state(self._zone()):
+            keep_mute = False
             await self._async_call(SERVICE_TURN_ON, self._zone_id, critical=True)
             # Only a zone this call powered up starts at its startup volume; one
             # already on keeps whatever someone set it to.
@@ -696,6 +698,8 @@ class AmpZoneFacade(MediaPlayerEntity):
                     self._source_name,
                     self._zone_id,
                 )
+        if keep_mute:
+            return True
         # Dashboard / prior sessions often leave amp zones muted — clear on join.
         zone = self._zone()
         if zone is None or zone.attributes.get(ATTR_MEDIA_VOLUME_MUTED) is not False:

@@ -219,7 +219,10 @@ class AmpSession:
             _LOGGER.warning("Join ignored — unknown leader %s", leader_entity_id)
             return
 
-        if not await leader.async_power_zone_on():
+        # Adding a room must not unmute a leader that is already in the session.
+        if not await leader.async_power_zone_on(
+            keep_mute=leader_entity_id in self._members
+        ):
             _LOGGER.warning(
                 "Join ignored — %s did not power on", leader_entity_id
             )
