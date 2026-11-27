@@ -87,6 +87,11 @@ _RESTART_SEC = 5.0
 # volume and mute, and its receiver stays on.
 _HANDOVER_SEC = 5.0
 _RECEIVER_OFF_DELAY_SEC = 3.0
+# After the off sound mode, before power off; then how long the power off may
+# take to show, and how often it is sent.
+_RECEIVER_MODE_SETTLE_SEC = 2.0
+_RECEIVER_OFF_CONFIRM_SEC = 6.0
+_RECEIVER_OFF_ATTEMPTS = 2
 # How long after a turn on the zone may still report off.
 _TURN_ON_SETTLE_SEC = 5.0
 # How long a digital join may look on before the SyncGroup must list it.
@@ -896,13 +901,35 @@ class AmpZoneFacade(MediaPlayerEntity):
         if self._off_sound_mode:
             target = self._resolve_sound_mode_entity(self._off_sound_mode)
             if target is not None:
-                await self._async_call(
+                ok = await self._async_call(
                     "select_sound_mode",
                     target,
                     {"sound_mode": self._off_sound_mode},
                     critical=False,
                 )
-        await self._async_call(SERVICE_TURN_OFF, receiver, critical=False)
+                if ok:
+                    # A Sony ignores power off while it is still switching modes.
+                    await asyncio.sleep(_RECEIVER_MODE_SETTLE_SEC)
+        for attempt in range(_RECEIVER_OFF_ATTEMPTS):
+            await self._async_call(SERVICE_TURN_OFF, receiver, critical=False)
+            if await self._async_wait_off(receiver):
+                return
+            _LOGGER.debug(
+                "%s still on after power off (attempt %s)", receiver, attempt + 1
+            )
+        _LOGGER.warning("%s did not turn off", receiver)
+
+    async def _async_wait_off(self, entity_id: str) -> bool:
+        """Wait for an entity to report off; False if it is still on."""
+        loop = asyncio.get_running_loop()
+        deadline = loop.time() + _RECEIVER_OFF_CONFIRM_SEC
+        while True:
+            state = self.hass.states.get(entity_id)
+            if state is None or not _is_on_state(state):
+                return True
+            if loop.time() >= deadline:
+                return False
+            await asyncio.sleep(0.5)
 
     async def _async_power_off_receiver_later(self) -> None:
         await asyncio.sleep(_RECEIVER_OFF_DELAY_SEC)
