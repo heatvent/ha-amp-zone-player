@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 1.2.15 - 2026-11-26
 
 - A lead room that Control4 or a keypad turns off stays off. Another room coming on no longer turns it back on.
 - Turning off the lead room no longer stops the music in the other rooms. Music Assistant stops the old lead just after the next room has started; that late stop is ignored.
