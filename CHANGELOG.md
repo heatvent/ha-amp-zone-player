@@ -1,5 +1,15 @@
 # Changelog
 
+## Unreleased
+
+- A lead room that Control4 or a keypad turns off stays off. Another room coming on no longer turns it back on.
+- Turning off the lead room no longer stops the music in the other rooms. Music Assistant stops the old lead just after the next room has started; that late stop is ignored.
+- A room that Music Assistant takes out and puts back within 5 seconds, as it does when the lead room leaves, keeps its volume and mute instead of going to its startup volume.
+- A receiver that TV takes while the music plays on stays on.
+- A receiver turned off while other rooms keep playing turns off 3 seconds later, so that it stays on when it comes right back.
+- A receiver now plays at its startup volume. It used to be set when the receiver joined, but the receiver went back to its last volume a few seconds later when the AirPlay stream started. The startup volume is now set again once the receiver starts playing, if that is within 2 minutes of joining.
+- After a reload or a restart during music, the lead room is the one whose queue is playing, not the first by name. The session is restored once Home Assistant has started.
+
 ## 1.2.14 - 2026-11-24
 
 - Next, Previous, seek, and playing something else keep a muted room muted while music is playing. Play after a pause or a stop still unmutes it.

@@ -4,15 +4,22 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import time
 from collections.abc import Callable
 from typing import TYPE_CHECKING
 
 from homeassistant.core import HomeAssistant, callback
+from homeassistant.helpers.start import async_at_started
 
 if TYPE_CHECKING:
     from .media_player import AmpZoneFacade
 
 _LOGGER = logging.getLogger(__name__)
+
+# Music Assistant stops the old lead room after it started the new one.
+_LATE_STOP_SEC = 5.0
+# How long before that start the lead may have moved.
+_HANDOVER_SEC = 15.0
 
 
 class AmpSession:
@@ -34,6 +41,11 @@ class AmpSession:
         self._expected = 0
         self._registered = 0
         self._restored = False
+        self._cancel_restore: Callable[[], None] | None = None
+        # Restored without knowing who owns the queue; the feed may still tell.
+        self._leader_guessed = False
+        self._former_leader: tuple[str, float] | None = None
+        self._late_stop: tuple[str, float] | None = None
 
     def expect(self, count: int) -> None:
         """How many facades this entry will register (used once for restore)."""
@@ -59,13 +71,17 @@ class AmpSession:
             and self._registered >= self._expected
         ):
             self._restored = True
-            self.hass.async_create_task(self.async_restore_from_zones())
+            # While Home Assistant starts, the amp and the decoder may not be up yet.
+            self._cancel_restore = async_at_started(self.hass, self._async_restore)
 
     def unregister(self, facade: AmpZoneFacade) -> None:
         entity_id = facade.entity_id
         if not entity_id:
             return
         self._facades.pop(entity_id, None)
+        if not self._facades and self._cancel_restore is not None:
+            self._cancel_restore()
+            self._cancel_restore = None
         if entity_id in self._members:
             self._members = [m for m in self._members if m != entity_id]
             if self.leader_id == entity_id:
@@ -146,6 +162,96 @@ class AmpSession:
             self.leader_id = new_id
         self.async_notify()
 
+    async def _async_restore(self, _hass: HomeAssistant) -> None:
+        await self.async_restore_from_zones()
+
+    def _feed_leader(self, members: list[str]) -> str | None:
+        """The member whose Music Assistant queue the feed is playing.
+
+        Its entity id is part of the stream URL.
+        """
+        for facade in self._facades.values():
+            for url in facade.feed_urls():
+                for entity_id in members:
+                    if f"/{entity_id}/" in url:
+                        return entity_id
+        return None
+
+    @callback
+    def async_feed_changed(self) -> None:
+        """Correct a guessed leader once the feed says whose queue it plays."""
+        if not self._leader_guessed:
+            return
+        leader = self._feed_leader(self._members)
+        if leader is None:
+            return
+        self._leader_guessed = False
+        if leader != self.leader_id:
+            self.leader_id = leader
+            self._members = [leader, *[m for m in self._members if m != leader]]
+            _LOGGER.info("Session leader is %s", leader)
+            self.async_notify()
+
+    def _set_leader(self, entity_id: str | None) -> None:
+        if self.leader_id and self.leader_id != entity_id:
+            self._former_leader = (self.leader_id, time.monotonic())
+        self.leader_id = entity_id
+        self._leader_guessed = False
+
+    @callback
+    def async_note_play(self, facade_entity_id: str) -> None:
+        """Playback starts on this facade."""
+        now = time.monotonic()
+        former = self._former_leader
+        if former and now - former[1] < _HANDOVER_SEC:
+            self._late_stop = (former[0], now)
+        else:
+            self._late_stop = None
+
+    def is_late_stop(self, facade_entity_id: str) -> bool:
+        """True when a stop of this facade is aimed at music that moved on.
+
+        Turning off the lead room moves its queue to another room first. Music
+        Assistant then still stops the old lead, which would stop the shared feed.
+        """
+        return (
+            self._late_stop is not None
+            and self._late_stop[0] == facade_entity_id
+            and time.monotonic() - self._late_stop[1] < _LATE_STOP_SEC
+        )
+
+    def _prune_off_locked(self, keep: str) -> None:
+        """Forget members turned off elsewhere, before they count as a leader."""
+        for entity_id in list(self._members):
+            facade = self._facades.get(entity_id)
+            if entity_id != keep and facade is not None and facade.zone_turned_off():
+                self._drop_member_locked(entity_id)
+
+    async def async_turn_on(self, facade_entity_id: str) -> None:
+        """Add a room to the running session, or start one with it.
+
+        Only this room is powered: a leader that is off stays off.
+        """
+        async with self._lock:
+            self._prune_off_locked(facade_entity_id)
+            if self.leader_id in (None, facade_entity_id):
+                await self._ensure_leader_locked(facade_entity_id, False)
+                return
+            facade = self._facades.get(facade_entity_id)
+            if facade is None:
+                return
+            member = facade_entity_id in self._members
+            if member and facade.is_active:
+                return
+            if not await facade.async_power_zone_on():
+                return
+            if not member:
+                self._members.append(facade_entity_id)
+            _LOGGER.info(
+                "Session group: leader=%s members=%s", self.leader_id, self._members
+            )
+            self.async_notify()
+
     async def async_restore_from_zones(self) -> None:
         """Adopt zones that are already on, or receivers still in the SyncGroup."""
         async with self._lock:
@@ -157,8 +263,13 @@ class AmpSession:
                     adopted.append(entity_id)
             if not adopted:
                 return
-            self._members = adopted
-            self.leader_id = adopted[0]
+            leader = self._feed_leader(adopted)
+            self._leader_guessed = leader is None
+            self.leader_id = leader or adopted[0]
+            self._members = [
+                self.leader_id,
+                *[m for m in adopted if m != self.leader_id],
+            ]
             _LOGGER.info(
                 "Restored session from zone state: leader=%s members=%s",
                 self.leader_id,
@@ -179,6 +290,7 @@ class AmpSession:
     async def _ensure_leader_locked(
         self, facade_entity_id: str, keep_mute: bool
     ) -> None:
+        self._prune_off_locked(facade_entity_id)
         facade = self._facades.get(facade_entity_id)
         if facade is None:
             _LOGGER.warning(
@@ -204,7 +316,7 @@ class AmpSession:
                 facade_entity_id,
                 *[m for m in self._members if m != facade_entity_id],
             ]
-        self.leader_id = facade_entity_id
+        self._set_leader(facade_entity_id)
         self.async_notify()
 
     async def async_join(
@@ -227,6 +339,7 @@ class AmpSession:
         if leader is None:
             _LOGGER.warning("Join ignored — unknown leader %s", leader_entity_id)
             return
+        self._prune_off_locked(leader_entity_id)
 
         # Adding a room must not unmute a leader that is already in the session.
         if not await leader.async_power_zone_on(
@@ -283,7 +396,7 @@ class AmpSession:
                 continue
             members.append(entity_id)
 
-        self.leader_id = leader_entity_id
+        self._set_leader(leader_entity_id)
         self._members = members
         _LOGGER.info(
             "Session group: leader=%s members=%s", self.leader_id, self._members
@@ -296,7 +409,11 @@ class AmpSession:
             facade = self._facades.get(facade_entity_id)
             if facade is not None:
                 try:
-                    await facade.async_power_zone_off()
+                    await facade.async_power_zone_off(
+                        others_playing=any(
+                            m != facade_entity_id for m in self._members
+                        )
+                    )
                 except Exception:
                     _LOGGER.exception(
                         "Unjoin: failed to power off zone for %s", facade_entity_id
@@ -319,7 +436,7 @@ class AmpSession:
 
         self._members = [m for m in self._members if m != facade_entity_id]
         if self.leader_id == facade_entity_id:
-            self.leader_id = self._members[0] if self._members else None
+            self._set_leader(self._members[0] if self._members else None)
             _LOGGER.info("Session leader moved to %s", self.leader_id)
 
         facade = self._facades.get(facade_entity_id)

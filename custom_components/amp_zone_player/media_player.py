@@ -82,8 +82,20 @@ DEVICE_NAME_FALLBACK = "Amp zones"
 _EXTERNAL_OFF_GRACE_SEC = 1.5
 # Music Assistant stops the feed and starts it again for Next and seek.
 _RESTART_SEC = 5.0
+# Turning off the lead room makes Music Assistant take the other rooms out and put
+# them back within a second or so. A room that comes back this soon keeps its
+# volume and mute, and its receiver stays on.
+_HANDOVER_SEC = 5.0
+_RECEIVER_OFF_DELAY_SEC = 3.0
+# How long after a turn on the zone may still report off.
+_TURN_ON_SETTLE_SEC = 5.0
 # How long a digital join may look on before the SyncGroup must list it.
 _DIGITAL_JOIN_CONFIRM_SEC = 8.0
+# A receiver takes the AirPlay stream some seconds after it joins and then reports
+# its own last volume, which replaces the startup volume. Within this long after a
+# join, the startup volume is set again once the receiver starts playing.
+_STARTUP_VOLUME_WINDOW_SEC = 120.0
+_STARTUP_VOLUME_SETTLE_SEC = 2.0
 
 _STATE_ENUM = {
     "off": MediaPlayerState.OFF,
@@ -272,6 +284,13 @@ class AmpZoneFacade(MediaPlayerEntity):
         self._reconcile_task: asyncio.Task | None = None
         self._join_confirm_task: asyncio.Task | None = None
         self._amp_off_task: asyncio.Task | None = None
+        self._receiver_off_task: asyncio.Task | None = None
+        # When the zone was turned off here, and its volume and mute until then.
+        self._left: tuple[float, float | None, bool] | None = None
+        self._turned_on_at: float | None = None
+        # Digital: until when the startup volume is still owed once the stream starts.
+        self._startup_volume_due: float | None = None
+        self._startup_volume_task: asyncio.Task | None = None
         self._input_id = decoder_entity_id
 
     @property
@@ -282,12 +301,68 @@ class AmpZoneFacade(MediaPlayerEntity):
     def is_digital(self) -> bool:
         return self._zone_kind == ZONE_KIND_DIGITAL
 
+    @property
+    def is_active(self) -> bool:
+        """This room hears the feed."""
+        return self._zone_is_active()
+
+    def zone_turned_off(self) -> bool:
+        """An amp zone that was turned off outside this integration."""
+        if self.is_digital or not _is_off_state(self._zone()):
+            return False
+        return (
+            self._turned_on_at is None
+            or time.monotonic() - self._turned_on_at > _TURN_ON_SETTLE_SEC
+        )
+
+    def feed_urls(self) -> list[str]:
+        """What the playback target and the decoder say they are playing."""
+        urls = []
+        for state in (self._playback(), self._decoder()):
+            url = state.attributes.get("media_content_id") if state else None
+            if isinstance(url, str):
+                urls.append(url)
+        return urls
+
     def clear_digital_sync_seen(self) -> None:
         """Reset SyncGroup observation (after leave / external steal)."""
         self._digital_seen_in_sync = False
         self._digital_join_pending = False
         self._cancel_task(self._join_confirm_task)
         self._join_confirm_task = None
+        self._startup_volume_due = None
+        self._cancel_task(self._startup_volume_task)
+        self._startup_volume_task = None
+
+    def _schedule_startup_volume_on_play(self) -> None:
+        """Set the startup volume again once a just-joined receiver plays."""
+        due = self._startup_volume_due
+        if due is None or self._startup_volume is None:
+            return
+        if time.monotonic() > due:
+            self._startup_volume_due = None
+            return
+        zone = self._zone()
+        if zone is None or zone.state != MediaPlayerState.PLAYING:
+            return
+        self._startup_volume_due = None
+        self._cancel_task(self._startup_volume_task)
+        self._startup_volume_task = self.hass.async_create_task(
+            self._async_reapply_startup_volume()
+        )
+
+    async def _async_reapply_startup_volume(self) -> None:
+        try:
+            await asyncio.sleep(_STARTUP_VOLUME_SETTLE_SEC)
+        except asyncio.CancelledError:
+            return
+        zone = self._zone()
+        if zone is None or self._startup_volume is None:
+            return
+        level = zone.attributes.get(ATTR_MEDIA_VOLUME_LEVEL)
+        if isinstance(level, (int, float)) and abs(level - self._startup_volume) < 0.005:
+            return
+        await self._async_apply_startup_volume()
 
     def adopt_existing_activity(self) -> bool:
         """True when this zone is already open and should rejoin the session."""
@@ -447,10 +522,13 @@ class AmpZoneFacade(MediaPlayerEntity):
         @callback
         def _on_change(event: Event) -> None:
             self._note_feed_change(event)
+            self._session.async_feed_changed()
             if self.is_digital:
                 if self._digital_in_sync_group():
                     self._digital_seen_in_sync = True
                     self._digital_join_pending = False
+                if event.data.get("entity_id") == self._zone_id:
+                    self._schedule_startup_volume_on_play()
                 self._schedule_digital_reconcile()
             else:
                 self._schedule_amp_external_off()
@@ -491,11 +569,15 @@ class AmpZoneFacade(MediaPlayerEntity):
             self._reconcile_task,
             self._join_confirm_task,
             self._amp_off_task,
+            self._receiver_off_task,
+            self._startup_volume_task,
         ):
             self._cancel_task(task)
+        self._startup_volume_task = None
         self._reconcile_task = None
         self._join_confirm_task = None
         self._amp_off_task = None
+        self._receiver_off_task = None
 
     @staticmethod
     def _cancel_task(task: asyncio.Task | None) -> None:
@@ -651,6 +733,10 @@ class AmpZoneFacade(MediaPlayerEntity):
         ``keep_mute`` leaves the mute of an amp zone that is already on alone.
         Returns False when a digital receiver did not join the SyncGroup.
         """
+        left, self._left = self._left, None
+        if left is not None and time.monotonic() - left[0] > _HANDOVER_SEC:
+            left = None
+        self._cancel_task(self._receiver_off_task)
         if self.is_digital:
             if self._digital_in_sync_group():
                 # Already hearing the decoder: re-joining would only restart the
@@ -695,18 +781,39 @@ class AmpZoneFacade(MediaPlayerEntity):
                 )
                 return False
             self._digital_join_pending = True
-            await self._async_apply_startup_volume()
+            if left is None:
+                await self._async_apply_startup_volume()
+                if self._startup_volume is not None:
+                    self._startup_volume_due = (
+                        time.monotonic() + _STARTUP_VOLUME_WINDOW_SEC
+                    )
             self._schedule_join_confirm()
             return True
 
         # Each call below is a round trip to an amp that may handle one command
         # at a time, so only send what the zone's current state still needs.
         if not _is_on_state(self._zone()):
-            keep_mute = False
             await self._async_call(SERVICE_TURN_ON, self._zone_id, critical=True)
+            self._turned_on_at = time.monotonic()
+            keep_mute = left is not None and left[2]
             # Only a zone this call powered up starts at its startup volume; one
             # already on keeps whatever someone set it to.
-            await self._async_apply_startup_volume()
+            if left is not None and left[1] is not None:
+                await self._async_call(
+                    SERVICE_VOLUME_SET,
+                    self._zone_id,
+                    {ATTR_MEDIA_VOLUME_LEVEL: left[1]},
+                    critical=False,
+                )
+            else:
+                await self._async_apply_startup_volume()
+            if keep_mute:
+                await self._async_call(
+                    SERVICE_VOLUME_MUTE,
+                    self._zone_id,
+                    {ATTR_MEDIA_VOLUME_MUTED: True},
+                    critical=False,
+                )
         zone = self._zone()
         if self._source_name and (
             zone is None or zone.attributes.get("source") != self._source_name
@@ -797,16 +904,48 @@ class AmpZoneFacade(MediaPlayerEntity):
                 )
         await self._async_call(SERVICE_TURN_OFF, receiver, critical=False)
 
-    async def async_power_zone_off(self) -> None:
-        """Turn amp zone off, or unjoin digital receiver from the SyncGroup."""
+    async def _async_power_off_receiver_later(self) -> None:
+        await asyncio.sleep(_RECEIVER_OFF_DELAY_SEC)
+        await self._async_power_off_receiver()
+        self._forget_receiver_source()
+
+    def _forget_receiver_source(self) -> None:
+        self._joined_source_known = False
+        self._joined_source = None
+
+    async def async_power_zone_off(self, *, others_playing: bool = False) -> None:
+        """Turn amp zone off, or unjoin digital receiver from the SyncGroup.
+
+        ``others_playing`` says the session goes on without this room, so it may
+        be about to come back (see _HANDOVER_SEC).
+        """
+        zone = self._zone()
+        if _is_on_state(zone):
+            self._left = (
+                time.monotonic(),
+                zone.attributes.get(ATTR_MEDIA_VOLUME_LEVEL),
+                zone.attributes.get(ATTR_MEDIA_VOLUME_MUTED) is True,
+            )
         if self.is_digital:
-            was_playing = self._digital_seen_in_sync or self._digital_in_sync_group()
+            # A receiver that left while the music plays on was taken (TV).
+            was_playing = self._digital_in_sync_group() or (
+                self._digital_seen_in_sync and not self._decoder_already_active()
+            )
             self._digital_seen_in_sync = False
+            self._startup_volume_due = None
+            self._cancel_task(self._startup_volume_task)
+            self._startup_volume_task = None
+            self._cancel_task(self._receiver_off_task)
             await self._async_call("unjoin", self._zone_id, critical=False)
             if self._power_off and was_playing:
+                if others_playing:
+                    self._receiver_off_task = self.hass.async_create_background_task(
+                        self._async_power_off_receiver_later(),
+                        f"{DOMAIN} receiver off {self._zone_id}",
+                    )
+                    return
                 await self._async_power_off_receiver()
-            self._joined_source_known = False
-            self._joined_source = None
+            self._forget_receiver_source()
             return
         await self._async_call(SERVICE_TURN_OFF, self._zone_id, critical=False)
 
@@ -949,12 +1088,7 @@ class AmpZoneFacade(MediaPlayerEntity):
         """Power zone on; join existing session or start a solo session."""
         if not self.entity_id:
             return
-        if self._session.leader_id and self._session.leader_id != self.entity_id:
-            await self._session.async_join(
-                self._session.leader_id, [self.entity_id]
-            )
-        else:
-            await self._session.async_ensure_leader(self.entity_id)
+        await self._session.async_turn_on(self.entity_id)
 
     async def async_turn_off(self) -> None:
         """Leave session / power zone off."""
@@ -973,6 +1107,11 @@ class AmpZoneFacade(MediaPlayerEntity):
 
         Leaving a room is turn_off / unjoin — not media_stop.
         """
+        if self.entity_id and self._session.is_late_stop(self.entity_id):
+            _LOGGER.info(
+                "Ignoring stop of %s — its music moved to another room", self.entity_id
+            )
+            return
         target = self._transport_id()
         stopped = await self._async_call(
             SERVICE_MEDIA_STOP, target, critical=False
@@ -1010,6 +1149,7 @@ class AmpZoneFacade(MediaPlayerEntity):
             await self._session.async_ensure_leader(
                 self.entity_id, keep_mute=self._feed_is_playing()
             )
+            self._session.async_note_play(self.entity_id)
 
         # Soft-attach when the feed is already on this exact item (e.g. House
         # SyncGroup owns the queue and MA retargets a facade). New media always
