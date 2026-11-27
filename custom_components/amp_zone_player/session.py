@@ -419,6 +419,7 @@ class AmpSession:
                         "Unjoin: failed to power off zone for %s", facade_entity_id
                     )
             self._drop_member_locked(facade_entity_id)
+            await self._stop_feed_if_nobody_left_locked(facade_entity_id)
 
     async def async_drop_member(self, facade_entity_id: str) -> None:
         """Remove a facade from the session without touching the zone player.
@@ -427,7 +428,25 @@ class AmpSession:
         (e.g. Control4 took the STR for TV).
         """
         async with self._lock:
+            was_member = facade_entity_id in self._members
             self._drop_member_locked(facade_entity_id)
+            if was_member:
+                await self._stop_feed_if_nobody_left_locked(facade_entity_id)
+
+    async def _stop_feed_if_nobody_left_locked(self, facade_entity_id: str) -> None:
+        """The last room left (turned off here or elsewhere): stop the music.
+
+        Not called when another room is taking over: then members remain.
+        """
+        if self._members:
+            return
+        facade = self._facades.get(facade_entity_id)
+        if facade is None:
+            return
+        try:
+            await facade.async_stop_feed_nobody_hears()
+        except Exception:
+            _LOGGER.exception("Failed to stop the feed after the last room left")
 
     def _drop_member_locked(self, facade_entity_id: str) -> None:
         if facade_entity_id not in self._members:

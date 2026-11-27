@@ -1173,6 +1173,23 @@ class AmpZoneFacade(MediaPlayerEntity):
                 SERVICE_MEDIA_PAUSE, target, critical=False
             )
 
+    async def async_stop_feed_nobody_hears(self) -> None:
+        """Stop the feed when the last room has left and it still plays.
+
+        Without this the WiiM streams on to no room until it gives up by itself.
+        """
+        playback = self._playback()
+        if playback is None or playback.state not in (STATE_PLAYING, "buffering"):
+            return
+        _LOGGER.info("Last room left — stopping %s", self._playback_id)
+        stopped = await self._async_call(
+            SERVICE_MEDIA_STOP, self._playback_id, critical=False
+        )
+        if not stopped:
+            await self._async_call(
+                SERVICE_MEDIA_PAUSE, self._playback_id, critical=False
+            )
+
     async def async_media_next_track(self) -> None:
         await self._async_call(SERVICE_MEDIA_NEXT_TRACK, self._transport_id())
 

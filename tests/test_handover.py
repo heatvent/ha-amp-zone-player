@@ -610,3 +610,50 @@ async def test_restore_waits_for_home_assistant_to_start(rig, hass: HomeAssistan
     hass.bus.async_fire(EVENT_HOMEASSISTANT_STARTED)
     await hass.async_block_till_done()
     assert r.session.members == [KITCHEN, BAR]
+
+
+# The last room leaving stops the feed, so nothing streams to no room.
+
+
+def _stops(r) -> int:
+    return sum(1 for c in r.calls if c[:2] == ("media_stop", DECODER))
+
+
+async def test_last_room_off_stops_the_feed(rig) -> None:
+    r = rig(KITCHEN, BAR)
+    await r.play(KITCHEN, BAR)
+    await r.rooms[BAR].async_turn_off()
+    assert _stops(r) == 0
+    await r.rooms[KITCHEN].async_turn_off()
+    assert _stops(r) == 1
+    assert r.hass.states.get(DECODER).state == "idle"
+
+
+async def test_last_room_turned_off_outside_stops_the_feed(rig, monkeypatch) -> None:
+    monkeypatch.setattr(mp, "_EXTERNAL_OFF_GRACE_SEC", 0.01)
+    r = rig(KITCHEN)
+    await r.play(KITCHEN)
+    r.outside_off(KITCHEN)
+    r.rooms[KITCHEN]._schedule_amp_external_off()  # what the zone listener does
+    await asyncio.sleep(0.1)
+    assert r.session.members == []
+    assert _stops(r) == 1
+
+
+async def test_lead_turned_off_outside_with_others_keeps_the_feed(rig, monkeypatch) -> None:
+    monkeypatch.setattr(mp, "_EXTERNAL_OFF_GRACE_SEC", 0.01)
+    r = rig(KITCHEN, BAR)
+    await r.play(KITCHEN, BAR)
+    r.outside_off(KITCHEN)
+    r.rooms[KITCHEN]._schedule_amp_external_off()
+    await asyncio.sleep(0.1)
+    assert r.session.members == [BAR]
+    assert _stops(r) == 0
+
+
+async def test_last_room_off_leaves_a_stopped_feed_alone(rig) -> None:
+    r = rig(KITCHEN)
+    await r.play(KITCHEN)
+    r.decoder("idle", None)
+    await r.rooms[KITCHEN].async_turn_off()
+    assert _stops(r) == 0
