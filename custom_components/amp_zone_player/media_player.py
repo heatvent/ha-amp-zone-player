@@ -269,6 +269,9 @@ class AmpZoneFacade(MediaPlayerEntity):
         # Receiver input when it joined; a different input later means someone
         # took it (turntable, TV) and turning the room off must leave it on.
         self._joined_source: str | None = None
+        # Goes up every time the zone is powered on, so a power off that waits
+        # can tell that the room came back in the meantime.
+        self._power_on_count = 0
         self._joined_source_known = False
         self._attr_unique_id = (
             f"{entry.entry_id}_digital_{zone_entity_id}"
@@ -738,6 +741,7 @@ class AmpZoneFacade(MediaPlayerEntity):
         ``keep_mute`` leaves the mute of an amp zone that is already on alone.
         Returns False when a digital receiver did not join the SyncGroup.
         """
+        self._power_on_count += 1
         left, self._left = self._left, None
         if left is not None and time.monotonic() - left[0] > _HANDOVER_SEC:
             left = None
@@ -881,22 +885,8 @@ class AmpZoneFacade(MediaPlayerEntity):
     async def _async_power_off_receiver(self) -> None:
         """Turn off a receiver that was playing music, unless someone took it."""
         receiver = self._receiver_entity_id()
-        state = self.hass.states.get(receiver)
-        if state is None or not _is_on_state(state):
-            return
-        source = state.attributes.get("source")
-        if self._joined_source_known:
-            if source != self._joined_source:
-                _LOGGER.debug(
-                    "%s is on %r (joined on %r) — leaving it on",
-                    receiver,
-                    source,
-                    self._joined_source,
-                )
-                return
-        elif source is not None:
-            # Unknown history (e.g. after a restart) and on a named input: it may
-            # be the TV, so leave it alone.
+        power_on_count = self._power_on_count
+        if not self._receiver_still_ours(receiver, power_on_count):
             return
         if self._off_sound_mode:
             target = self._resolve_sound_mode_entity(self._off_sound_mode)
@@ -911,6 +901,10 @@ class AmpZoneFacade(MediaPlayerEntity):
                     # A Sony ignores power off while it is still switching modes.
                     await asyncio.sleep(_RECEIVER_MODE_SETTLE_SEC)
         for attempt in range(_RECEIVER_OFF_ATTEMPTS):
+            # Checked again after every wait: the TV or the room may have taken
+            # the receiver back in the meantime.
+            if not self._receiver_still_ours(receiver, power_on_count):
+                return
             await self._async_call(SERVICE_TURN_OFF, receiver, critical=False)
             if await self._async_wait_off(receiver):
                 return
@@ -918,6 +912,30 @@ class AmpZoneFacade(MediaPlayerEntity):
                 "%s still on after power off (attempt %s)", receiver, attempt + 1
             )
         _LOGGER.warning("%s did not turn off", receiver)
+
+    def _receiver_still_ours(self, receiver: str, power_on_count: int) -> bool:
+        """True while the receiver is on, still on the music, and not rejoined."""
+        if power_on_count != self._power_on_count:
+            # The room was turned back on.
+            return False
+        state = self.hass.states.get(receiver)
+        if state is None or not _is_on_state(state):
+            return False
+        source = state.attributes.get("source")
+        if self._joined_source_known:
+            if source != self._joined_source:
+                _LOGGER.debug(
+                    "%s is on %r (joined on %r) — leaving it on",
+                    receiver,
+                    source,
+                    self._joined_source,
+                )
+                return False
+        elif source is not None:
+            # Unknown history (e.g. after a restart) and on a named input: it may
+            # be the TV, so leave it alone.
+            return False
+        return True
 
     async def _async_wait_off(self, entity_id: str) -> bool:
         """Wait for an entity to report off; False if it is still on."""
@@ -933,8 +951,10 @@ class AmpZoneFacade(MediaPlayerEntity):
 
     async def _async_power_off_receiver_later(self) -> None:
         await asyncio.sleep(_RECEIVER_OFF_DELAY_SEC)
+        power_on_count = self._power_on_count
         await self._async_power_off_receiver()
-        self._forget_receiver_source()
+        if power_on_count == self._power_on_count:
+            self._forget_receiver_source()
 
     def _forget_receiver_source(self) -> None:
         self._joined_source_known = False
@@ -971,7 +991,11 @@ class AmpZoneFacade(MediaPlayerEntity):
                         f"{DOMAIN} receiver off {self._zone_id}",
                     )
                     return
+                power_on_count = self._power_on_count
                 await self._async_power_off_receiver()
+                if power_on_count != self._power_on_count:
+                    # The room came back while the receiver was being turned off.
+                    return
             self._forget_receiver_source()
             return
         await self._async_call(SERVICE_TURN_OFF, self._zone_id, critical=False)

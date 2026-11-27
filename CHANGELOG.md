@@ -1,8 +1,9 @@
 # Changelog
 
-## Unreleased
+## 1.2.16 - 2026-11-27
 
 - A receiver turned off with its room now really turns off. A Sony ignored the power off sent right after the off sound mode (A.F.D. Movie), so the receiver stayed on. The power off now waits 2 seconds after the sound mode, checks that the receiver went off, and is sent once more if it did not.
+- While it waits, it checks again before each power off. A receiver that the TV takes, or whose room is turned back on, during those seconds is left on.
 
 ## 1.2.15 - 2026-11-26
 

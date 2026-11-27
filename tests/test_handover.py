@@ -468,8 +468,8 @@ async def test_receiver_that_ignores_power_off_gets_it_again(rig) -> None:
     facade = r.rooms[THEATER]
     facade._digital_seen_in_sync = True
     facade._remember_receiver_source()
-    r.ignore_offs = 1
     await r.rooms[KITCHEN].async_turn_off()
+    r.ignore_offs = 1
     await facade.async_turn_off()
     assert r.offs.count(RECEIVER) == 2
     assert r.hass.states.get(RECEIVER).state == "off"
@@ -481,10 +481,45 @@ async def test_receiver_that_stays_on_is_not_sent_power_off_forever(rig) -> None
     facade = r.rooms[THEATER]
     facade._digital_seen_in_sync = True
     facade._remember_receiver_source()
-    r.ignore_offs = 99
     await r.rooms[KITCHEN].async_turn_off()
+    r.ignore_offs = 99
     await facade.async_turn_off()
     assert r.offs.count(RECEIVER) == mp._RECEIVER_OFF_ATTEMPTS
+    assert r.hass.states.get(RECEIVER).state == "on"
+
+
+async def test_receiver_taken_by_tv_during_the_retry_wait_stays_on(rig) -> None:
+    r = rig(KITCHEN, THEATER)
+    await r.play(KITCHEN, THEATER)
+    facade = r.rooms[THEATER]
+    facade._digital_seen_in_sync = True
+    facade._remember_receiver_source()
+    await r.rooms[KITCHEN].async_turn_off()
+    r.ignore_offs = 1
+    off = asyncio.ensure_future(facade.async_turn_off())
+    await asyncio.sleep(0.05)
+    # The first power off was ignored; now the TV picks another input.
+    r.hass.states.async_set(RECEIVER, "on", {"source": "GAME"})
+    await off
+    assert r.offs.count(RECEIVER) == 1
+    assert r.hass.states.get(RECEIVER).state == "on"
+
+
+async def test_room_turned_back_on_during_the_retry_wait_keeps_its_receiver(rig) -> None:
+    r = rig(KITCHEN, THEATER)
+    await r.play(KITCHEN, THEATER)
+    facade = r.rooms[THEATER]
+    facade._digital_seen_in_sync = True
+    facade._remember_receiver_source()
+    await r.rooms[KITCHEN].async_turn_off()
+    r.ignore_offs = 1
+    off = asyncio.ensure_future(facade.async_turn_off())
+    await asyncio.sleep(0.05)
+    count = facade._power_on_count
+    await facade.async_power_zone_on()
+    assert facade._power_on_count == count + 1
+    await off
+    assert r.offs.count(RECEIVER) == 1
     assert r.hass.states.get(RECEIVER).state == "on"
 
 

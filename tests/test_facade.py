@@ -57,6 +57,9 @@ def _facade(
         if service == "turn_on" and entity_id == AMP_ZONE:
             # What the Control4 zone does on turn_on: route the WiiM input, unmuted.
             hass.states.async_set(AMP_ZONE, "on", {"source": "WiiM Pro", "is_volume_muted": False})
+        elif service == "turn_off" and entity_id == RECEIVER:
+            state = hass.states.get(RECEIVER)
+            hass.states.async_set(RECEIVER, "off", dict(state.attributes) if state else {})
         return True
 
     facade._async_call = _record  # type: ignore[method-assign]
