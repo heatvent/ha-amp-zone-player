@@ -1,5 +1,9 @@
 # Changelog
 
+## 1.2.17 - 2026-11-27
+
+- When the last music room turns off, here or from Control4, the WiiM stops. It used to keep streaming to no room until it gave up by itself about half a minute later. It is not stopped while another room keeps the music.
+
 ## 1.2.16 - 2026-11-27
 
 - A receiver turned off with its room now really turns off. A Sony ignored the power off sent right after the off sound mode (A.F.D. Movie), so the receiver stayed on. The power off now waits 2 seconds after the sound mode, checks that the receiver went off, and is sent once more if it did not.
