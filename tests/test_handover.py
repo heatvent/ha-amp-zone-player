@@ -37,6 +37,8 @@ class Rig:
         self.hass = hass
         self.calls: list[tuple[str, str, dict[str, Any]]] = []
         self.offs: list[str] = []
+        # How many power offs a device ignores (a Sony still switching modes).
+        self.ignore_offs = 0
         entry = MockConfigEntry(domain=DOMAIN, data={})
         entry.add_to_hass(hass)
         self.session = AmpSession(hass, entry.entry_id)
@@ -99,7 +101,10 @@ class Rig:
             self.hass.states.async_set(entity_id, "on", attrs)
         elif service == "turn_off":
             self.offs.append(entity_id)
-            self.hass.states.async_set(entity_id, "off", attrs)
+            if self.ignore_offs:
+                self.ignore_offs -= 1
+            else:
+                self.hass.states.async_set(entity_id, "off", attrs)
         elif service in ("volume_set", "volume_mute"):
             self.hass.states.async_set(entity_id, state.state, attrs | data)
         return True
@@ -160,6 +165,8 @@ class Rig:
 @pytest.fixture
 def rig(hass: HomeAssistant, monkeypatch):
     monkeypatch.setattr(mp, "_RECEIVER_OFF_DELAY_SEC", 0.05)
+    monkeypatch.setattr(mp, "_RECEIVER_MODE_SETTLE_SEC", 0)
+    monkeypatch.setattr(mp, "_RECEIVER_OFF_CONFIRM_SEC", 0.2)
     rigs: list[Rig] = []
 
     def make(*rooms: str) -> Rig:
@@ -453,6 +460,67 @@ async def test_room_off_turns_the_receiver_off(rig) -> None:
     await r.rooms[THEATER].async_turn_off()
     await asyncio.sleep(0.1)
     assert r.offs == [RECEIVER]
+
+
+async def test_receiver_that_ignores_power_off_gets_it_again(rig) -> None:
+    r = rig(KITCHEN, THEATER)
+    await r.play(KITCHEN, THEATER)
+    facade = r.rooms[THEATER]
+    facade._digital_seen_in_sync = True
+    facade._remember_receiver_source()
+    await r.rooms[KITCHEN].async_turn_off()
+    r.ignore_offs = 1
+    await facade.async_turn_off()
+    assert r.offs.count(RECEIVER) == 2
+    assert r.hass.states.get(RECEIVER).state == "off"
+
+
+async def test_receiver_that_stays_on_is_not_sent_power_off_forever(rig) -> None:
+    r = rig(KITCHEN, THEATER)
+    await r.play(KITCHEN, THEATER)
+    facade = r.rooms[THEATER]
+    facade._digital_seen_in_sync = True
+    facade._remember_receiver_source()
+    await r.rooms[KITCHEN].async_turn_off()
+    r.ignore_offs = 99
+    await facade.async_turn_off()
+    assert r.offs.count(RECEIVER) == mp._RECEIVER_OFF_ATTEMPTS
+    assert r.hass.states.get(RECEIVER).state == "on"
+
+
+async def test_receiver_taken_by_tv_during_the_retry_wait_stays_on(rig) -> None:
+    r = rig(KITCHEN, THEATER)
+    await r.play(KITCHEN, THEATER)
+    facade = r.rooms[THEATER]
+    facade._digital_seen_in_sync = True
+    facade._remember_receiver_source()
+    await r.rooms[KITCHEN].async_turn_off()
+    r.ignore_offs = 1
+    off = asyncio.ensure_future(facade.async_turn_off())
+    await asyncio.sleep(0.05)
+    # The first power off was ignored; now the TV picks another input.
+    r.hass.states.async_set(RECEIVER, "on", {"source": "GAME"})
+    await off
+    assert r.offs.count(RECEIVER) == 1
+    assert r.hass.states.get(RECEIVER).state == "on"
+
+
+async def test_room_turned_back_on_during_the_retry_wait_keeps_its_receiver(rig) -> None:
+    r = rig(KITCHEN, THEATER)
+    await r.play(KITCHEN, THEATER)
+    facade = r.rooms[THEATER]
+    facade._digital_seen_in_sync = True
+    facade._remember_receiver_source()
+    await r.rooms[KITCHEN].async_turn_off()
+    r.ignore_offs = 1
+    off = asyncio.ensure_future(facade.async_turn_off())
+    await asyncio.sleep(0.05)
+    count = facade._power_on_count
+    await facade.async_power_zone_on()
+    assert facade._power_on_count == count + 1
+    await off
+    assert r.offs.count(RECEIVER) == 1
+    assert r.hass.states.get(RECEIVER).state == "on"
 
 
 async def test_last_room_off_turns_the_receiver_off_at_once(rig) -> None:
