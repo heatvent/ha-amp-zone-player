@@ -9,6 +9,7 @@ from collections.abc import Callable
 from typing import TYPE_CHECKING
 
 from homeassistant.core import HomeAssistant, callback
+from homeassistant.helpers import entity_registry as er
 from homeassistant.helpers.start import async_at_started
 
 if TYPE_CHECKING:
@@ -403,8 +404,63 @@ class AmpSession:
         )
         self.async_notify()
 
+    def _ma_player(self, facade_entity_id: str) -> str | None:
+        """Music Assistant's player for a facade (its unique id is the facade)."""
+        for entry in er.async_get(self.hass).entities.values():
+            if (
+                entry.platform == "music_assistant"
+                and entry.domain == "media_player"
+                and entry.unique_id == facade_entity_id
+            ):
+                return entry.entity_id
+        return None
+
+    async def _async_hand_over(self, facade_entity_id: str) -> None:
+        """The lead room leaves while others keep the music: move the queue first.
+
+        Music Assistant owns the queue of the lead room's player. Turning that
+        room off here (not in Music Assistant) would stop the music everywhere,
+        so the queue moves to the next room, which becomes the lead.
+        """
+        async with self._lock:
+            if self.leader_id != facade_entity_id:
+                return
+            others = [m for m in self._members if m != facade_entity_id]
+            facade = self._facades.get(facade_entity_id)
+            if not others or facade is None or not facade.feed_carries_music():
+                return
+            successor = others[0]
+        source = self._ma_player(facade_entity_id)
+        target = self._ma_player(successor)
+        if source is None or target is None:
+            _LOGGER.warning(
+                "No Music Assistant player for %s or %s; the music may stop",
+                facade_entity_id,
+                successor,
+            )
+            return
+        async with self._lock:
+            # Moved first, so the late stop of the old lead is ignored and the
+            # new lead's play attaches to the running feed.
+            self._members = [successor, *[m for m in self._members if m != successor]]
+            self._set_leader(successor)
+            self._late_stop = (facade_entity_id, time.monotonic())
+            self.async_notify()
+        _LOGGER.info("Lead room %s leaves; queue moves to %s", facade_entity_id, successor)
+        try:
+            await self.hass.services.async_call(
+                "music_assistant",
+                "transfer_queue",
+                {"source_player": source, "auto_play": True},
+                target={"entity_id": target},
+                blocking=True,
+            )
+        except Exception:  # noqa: BLE001 - the room still leaves
+            _LOGGER.exception("Moving the queue from %s to %s failed", source, target)
+
     async def async_unjoin(self, facade_entity_id: str) -> None:
         """Remove a facade from the session and power its zone off."""
+        await self._async_hand_over(facade_entity_id)
         async with self._lock:
             facade = self._facades.get(facade_entity_id)
             if facade is not None:

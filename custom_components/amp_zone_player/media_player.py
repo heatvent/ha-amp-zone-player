@@ -364,11 +364,17 @@ class AmpZoneFacade(MediaPlayerEntity):
             await asyncio.sleep(_STARTUP_VOLUME_SETTLE_SEC)
         except asyncio.CancelledError:
             return
-        zone = self._zone()
-        if zone is None or self._startup_volume is None:
+        if self._startup_volume is None:
             return
-        level = zone.attributes.get(ATTR_MEDIA_VOLUME_LEVEL)
-        if isinstance(level, (int, float)) and abs(level - self._startup_volume) < 0.005:
+        states = [self.hass.states.get(e) for e in self._volume_ids()]
+        if not any(states):
+            return
+        levels = [s.attributes.get(ATTR_MEDIA_VOLUME_LEVEL) for s in states if s is not None]
+        # A receiver has coarse steps (1/74 on a Sony).
+        if all(
+            isinstance(level, (int, float)) and abs(level - self._startup_volume) < 0.02
+            for level in levels
+        ):
             return
         await self._async_apply_startup_volume()
 
@@ -647,6 +653,11 @@ class AmpZoneFacade(MediaPlayerEntity):
         elif old is not None and old.state == STATE_PLAYING:
             self._feed_stopped_at = time.monotonic()
 
+    def feed_carries_music(self) -> bool:
+        """The shared feed plays or is paused (a queue worth keeping)."""
+        playback = self._playback()
+        return playback is not None and playback.state in (STATE_PLAYING, STATE_PAUSED)
+
     def _feed_is_playing(self) -> bool:
         """True while music plays, and for the gap of a Next or seek."""
         playback = self._playback()
@@ -856,12 +867,13 @@ class AmpZoneFacade(MediaPlayerEntity):
     async def _async_apply_startup_volume(self) -> None:
         if self._startup_volume is None:
             return
-        await self._async_call(
-            SERVICE_VOLUME_SET,
-            self._zone_id,
-            {ATTR_MEDIA_VOLUME_LEVEL: self._startup_volume},
-            critical=False,
-        )
+        for target in self._volume_ids():
+            await self._async_call(
+                SERVICE_VOLUME_SET,
+                target,
+                {ATTR_MEDIA_VOLUME_LEVEL: self._startup_volume},
+                critical=False,
+            )
 
     def _receiver_entity_id(self) -> str:
         existing = {
@@ -870,6 +882,31 @@ class AmpZoneFacade(MediaPlayerEntity):
             if self.hass.states.get(entity_id) is not None
         }
         return receiver_power_entity(self._zone_id, existing)
+
+    def _area_of(self, entity_id: str) -> str | None:
+        entry = er.async_get(self.hass).async_get(entity_id)
+        if entry is None:
+            return None
+        if entry.area_id:
+            return entry.area_id
+        if entry.device_id:
+            device = dr.async_get(self.hass).async_get(entry.device_id)
+            return device.area_id if device else None
+        return None
+
+    def _receiver_tv_on(self, receiver: str) -> bool:
+        """True when a TV in the receiver's area is on."""
+        area = self._area_of(receiver)
+        if area is None:
+            return False
+        for state in self.hass.states.async_all(MP_DOMAIN):
+            if state.entity_id in (receiver, self._zone_id):
+                continue
+            if state.attributes.get("device_class") != "tv" or not _is_on_state(state):
+                continue
+            if self._area_of(state.entity_id) == area:
+                return True
+        return False
 
     def _receiver_candidates(self) -> list[str]:
         return [c for c in sound_mode_entity_candidates(self._zone_id) if c != self._zone_id]
@@ -920,6 +957,11 @@ class AmpZoneFacade(MediaPlayerEntity):
             return False
         state = self.hass.states.get(receiver)
         if state is None or not _is_on_state(state):
+            return False
+        if self._receiver_tv_on(receiver):
+            # A TV took the receiver, even on the input the music used (a Sony
+            # that plays AirPlay and the TV's eARC on one input).
+            _LOGGER.debug("%s: the TV in its room is on, leaving it on", receiver)
             return False
         source = state.attributes.get("source")
         if self._joined_source_known:
@@ -1083,19 +1125,33 @@ class AmpZoneFacade(MediaPlayerEntity):
             {"source": source},
         )
 
+    def _volume_ids(self) -> list[str]:
+        """Where volume and mute go: an amp zone, or a receiver room's receiver.
+
+        The AirPlay player of a receiver only scales its own stream; the
+        receiver's volume is what the room hears.
+        """
+        if not self.is_digital:
+            return [self._zone_id]
+        receiver = self._receiver_entity_id()
+        return [self._zone_id] if receiver == self._zone_id else [receiver, self._zone_id]
+
+    def _volume_state(self) -> State | None:
+        return self.hass.states.get(self._volume_ids()[0])
+
     @property
     def volume_level(self) -> float | None:
-        zone = self._zone()
-        if zone is None:
+        state = self._volume_state()
+        if state is None:
             return None
-        return zone.attributes.get(ATTR_MEDIA_VOLUME_LEVEL)
+        return state.attributes.get(ATTR_MEDIA_VOLUME_LEVEL)
 
     @property
     def is_volume_muted(self) -> bool | None:
-        zone = self._zone()
-        if zone is None:
+        state = self._volume_state()
+        if state is None:
             return None
-        return zone.attributes.get(ATTR_MEDIA_VOLUME_MUTED)
+        return state.attributes.get(ATTR_MEDIA_VOLUME_MUTED)
 
     def _idle_receiver(self) -> bool:
         """A receiver room that is not in the music.
@@ -1111,16 +1167,21 @@ class AmpZoneFacade(MediaPlayerEntity):
         if self._idle_receiver():
             _LOGGER.debug("%s is not playing music — ignoring volume", self.entity_id)
             return
-        await self._async_call(
-            SERVICE_VOLUME_SET, self._zone_id, {ATTR_MEDIA_VOLUME_LEVEL: volume}
-        )
+        targets = self._volume_ids()
+        for target in targets:
+            await self._async_call(
+                SERVICE_VOLUME_SET,
+                target,
+                {ATTR_MEDIA_VOLUME_LEVEL: volume},
+                critical=target == targets[0],
+            )
 
     async def async_mute_volume(self, mute: bool) -> None:
         if self._idle_receiver():
             _LOGGER.debug("%s is not playing music — ignoring mute", self.entity_id)
             return
         await self._async_call(
-            SERVICE_VOLUME_MUTE, self._zone_id, {ATTR_MEDIA_VOLUME_MUTED: mute}
+            SERVICE_VOLUME_MUTE, self._volume_ids()[0], {ATTR_MEDIA_VOLUME_MUTED: mute}
         )
 
     async def async_join_players(self, group_members: list[str]) -> None:
