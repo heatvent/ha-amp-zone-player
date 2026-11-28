@@ -1,5 +1,11 @@
 # Changelog
 
+## 1.2.18 - 2026-11-28
+
+- **Turning off the lead room here no longer stops the music in the other rooms.** Music Assistant owns the lead room's queue. Turning that room off from Home Assistant (a script, a dashboard, another integration) used to stop the music everywhere; now the queue moves to the next room first (`music_assistant.transfer_queue`), which becomes the lead, and then the room leaves. Turning it off in Music Assistant worked already.
+- **A receiver that a TV takes stays on, even on the same input.** A receiver room that left the music while the receiver was still on the input the music used (a Sony playing AirPlay and the TV's eARC on one input) was powered off a few seconds later, under the TV. Now it is left on while a TV in the receiver's area is on.
+- **A receiver room's volume goes to the receiver.** Volume and mute on a receiver room used to change only its AirPlay player, which the Sony didn't always follow. They now go to the receiver itself (and the AirPlay player), and the room shows the receiver's volume. The startup volume is set on both.
+
 ## 1.2.17 - 2026-11-27
 
 - When the last music room turns off, here or from Control4, the WiiM stops. It used to keep streaming to no room until it gave up by itself about half a minute later. It is not stopped while another room keeps the music.

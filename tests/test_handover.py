@@ -12,6 +12,7 @@ from typing import Any
 import pytest
 from homeassistant.const import EVENT_HOMEASSISTANT_STARTED
 from homeassistant.core import CoreState, HomeAssistant
+from homeassistant.helpers import entity_registry as er
 from homeassistant.helpers.event import async_track_state_change_event
 from pytest_homeassistant_custom_component.common import MockConfigEntry
 
@@ -657,3 +658,143 @@ async def test_last_room_off_leaves_a_stopped_feed_alone(rig) -> None:
     r.decoder("idle", None)
     await r.rooms[KITCHEN].async_turn_off()
     assert _stops(r) == 0
+
+
+# 1.2.18: a TV in the receiver's room, the receiver's volume, the lead room's queue.
+
+
+def _area(hass: HomeAssistant, entity_id: str, area_name: str, platform: str = "test") -> None:
+    from homeassistant.helpers import area_registry as ar
+
+    area = ar.async_get(hass).async_get_or_create(area_name)
+    domain, object_id = entity_id.split(".", 1)
+    state = hass.states.get(entity_id)
+    if state is not None:  # the id is taken while it has a state
+        hass.states.async_remove(entity_id)
+    registry = er.async_get(hass)
+    registry.async_get_or_create(domain, platform, object_id, suggested_object_id=object_id)
+    registry.async_update_entity(entity_id, area_id=area.id)
+    if state is not None:
+        hass.states.async_set(entity_id, state.state, state.attributes)
+
+
+async def test_receiver_stays_on_when_its_tv_takes_it_on_the_same_input(rig) -> None:
+    """Theater Assistant unjoins the zone, then the TV comes on; the input never changes."""
+    r = rig(KITCHEN, BAR, THEATER)
+    _area(r.hass, RECEIVER, "Theater")
+    _area(r.hass, "media_player.theater_tv", "Theater")
+    await _receiver_plays(r)
+    await r.rooms[THEATER].async_unjoin_player()  # still in the SyncGroup: was playing
+    r.hass.states.async_set("media_player.theater_tv", "on", {"device_class": "tv"})
+    await asyncio.sleep(0.1)
+    assert r.offs == []
+    assert r.session.members == [KITCHEN, BAR]
+
+
+async def test_a_tv_in_another_room_does_not_keep_the_receiver_on(rig) -> None:
+    r = rig(KITCHEN, BAR, THEATER)
+    _area(r.hass, RECEIVER, "Theater")
+    _area(r.hass, "media_player.living_room_tv", "Living Room")
+    r.hass.states.async_set("media_player.living_room_tv", "on", {"device_class": "tv"})
+    await _receiver_plays(r)
+    await r.rooms[THEATER].async_turn_off()
+    await asyncio.sleep(0.1)
+    assert r.offs == [RECEIVER]
+
+
+async def test_receiver_room_volume_goes_to_the_receiver(rig) -> None:
+    r = rig(KITCHEN, THEATER)
+    await _receiver_plays_alone(r)
+    facade = r.rooms[THEATER]
+    r.hass.states.async_set(RECEIVER, "on", {"source": "FIRE TV", "volume_level": 0.2})
+    await facade.async_set_volume_level(0.08)
+    assert r.hass.states.get(RECEIVER).attributes["volume_level"] == 0.08
+    assert r.volume(THEATER) == 0.08  # the AirPlay player too
+    assert facade.volume_level == 0.08
+    await facade.async_mute_volume(True)
+    assert r.hass.states.get(RECEIVER).attributes["is_volume_muted"] is True
+
+
+async def test_idle_receiver_room_volume_is_left_alone(rig) -> None:
+    r = rig(KITCHEN, THEATER)
+    await r.play(KITCHEN)
+    r.hass.states.async_set(RECEIVER, "on", {"source": "FIRE TV", "volume_level": 0.2})
+    await r.rooms[THEATER].async_set_volume_level(0.5)
+    assert r.hass.states.get(RECEIVER).attributes["volume_level"] == 0.2
+
+
+async def _receiver_plays_alone(r: Rig) -> None:
+    await r.play(KITCHEN, THEATER)
+    facade = r.rooms[THEATER]
+    facade._digital_seen_in_sync = True
+    facade._remember_receiver_source()
+
+
+def _ma_mirrors(hass: HomeAssistant, *rooms: str) -> dict[str, str]:
+    registry = er.async_get(hass)
+    out = {}
+    for room in rooms:
+        entry = registry.async_get_or_create(
+            "media_player", "music_assistant", room, suggested_object_id=f"{room.split('.')[1]}_ma"
+        )
+        out[room] = entry.entity_id
+    return out
+
+
+def _transfer_calls(hass: HomeAssistant) -> list[dict]:
+    calls: list[dict] = []
+
+    async def transfer(call) -> None:
+        calls.append({"target": call.data.get("entity_id"), **dict(call.data)})
+
+    hass.services.async_register("music_assistant", "transfer_queue", transfer)
+    return calls
+
+
+async def test_lead_room_turned_off_here_moves_the_queue_first(rig) -> None:
+    r = rig(KITCHEN, BAR)
+    mirrors = _ma_mirrors(r.hass, KITCHEN, BAR)
+    calls = _transfer_calls(r.hass)
+    await r.play(BAR, KITCHEN)  # the Bar leads
+    await r.rooms[BAR].async_turn_off()
+    assert len(calls) == 1
+    assert calls[0]["source_player"] == mirrors[BAR]
+    assert calls[0]["auto_play"] is True
+    assert mirrors[KITCHEN] in str(calls[0]["target"])
+    assert r.session.leader_id == KITCHEN
+    assert r.session.members == [KITCHEN]
+    assert not r.on(BAR)
+    assert r.playing() is not None  # the Kitchen keeps the music
+    # Music Assistant's late stop of the old lead is ignored.
+    await r.rooms[BAR].async_media_stop()
+    assert r.playing() is not None
+
+
+async def test_member_turned_off_does_not_move_the_queue(rig) -> None:
+    r = rig(KITCHEN, BAR)
+    _ma_mirrors(r.hass, KITCHEN, BAR)
+    calls = _transfer_calls(r.hass)
+    await r.play(KITCHEN, BAR)
+    await r.rooms[BAR].async_turn_off()
+    assert calls == []
+    assert r.session.leader_id == KITCHEN
+
+
+async def test_last_room_off_does_not_move_the_queue(rig) -> None:
+    r = rig(KITCHEN)
+    _ma_mirrors(r.hass, KITCHEN)
+    calls = _transfer_calls(r.hass)
+    await r.play(KITCHEN)
+    await r.rooms[KITCHEN].async_turn_off()
+    assert calls == []
+    assert r.playing() is None
+
+
+async def test_lead_room_without_a_music_assistant_player_still_leaves(rig) -> None:
+    r = rig(KITCHEN, BAR)
+    calls = _transfer_calls(r.hass)
+    await r.play(BAR, KITCHEN)
+    await r.rooms[BAR].async_turn_off()
+    assert calls == []
+    assert not r.on(BAR)
+    assert r.session.members == [KITCHEN]
